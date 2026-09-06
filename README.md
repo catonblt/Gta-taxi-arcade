@@ -15,7 +15,10 @@ npm run dev        # http://localhost:5173
 npm run build      # typecheck + production bundle into dist/
 npm test           # physics, collision and determinism specs
 npm run harness    # headless Chromium play-through: perf budget + regression screenshots
-npm run genmap     # regenerate a district's base street grid
+npm run genmap     # regenerate every district's street grid
+npm run balance    # run the economy through many headless shifts and chart the curve
+npm run sync       # build, then copy dist/ into the native Android project
+npm run apk        # assemble a debug APK
 ```
 
 ## Controls
@@ -28,6 +31,14 @@ Three things are never explained in game and always available: a **launch tap** 
 from a standstill), a **drift-cancel** (release drift at the apex for exit speed), and **contact
 steer** (a glancing wall hit redirects you instead of stopping you).
 
+## On a phone
+
+`npm run sync && npm run apk` produces `android/app/build/outputs/apk/debug/app-debug.apk`
+(4.2 MB) via Capacitor, wrapping the same `dist/` the browser runs. The build also ships a web
+manifest and icons, so served over HTTPS it installs straight from Chrome's **Add to home screen**
+without any store at all. See [docs/ANDROID.md](docs/ANDROID.md) for the SDK requirements and what
+a Play Store release additionally needs.
+
 ## Layout
 
 | Path | What lives there |
@@ -35,7 +46,9 @@ steer** (a glancing wall hit redirects you instead of stopping you).
 | `src/core/` | Fixed-timestep loop, input abstraction, seeded RNG, math |
 | `src/sim/` | Car physics, tile collision, the map, ambient traffic |
 | `src/render/` | Camera, canvas renderer, particles, HUD |
-| `src/data/` | Vehicle stats and the authored district maps (`.city` text grids) |
-| `tools/` | Map generator and the headless play harness |
+| `src/data/` | Vehicles, parts, districts, and the authored maps (`.city` text grids) |
+| `src/game/` | Shift clock, jobs, style multiplier, garage and save |
+| `src/screens/` | Garage and shift-summary overlays |
+| `tools/` | Map generator, icon renderer, headless play harness, economy simulator |
 
 Design decisions and the milestone plan live in the build plan that seeded this repo.

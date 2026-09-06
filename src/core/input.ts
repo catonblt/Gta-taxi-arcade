@@ -21,6 +21,13 @@ export interface InputSettings {
   leftHanded: boolean;
 }
 
+export interface SafeArea {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
 export interface PadLayout {
   driftX: number;
   driftY: number;
@@ -45,6 +52,8 @@ export class TouchInput {
   private readonly keys = new Set<string>();
   private width = 1;
   private height = 1;
+  /** Device insets: the gesture bar and the notch are not places to put a thumb pad. */
+  private safe: SafeArea = { top: 0, right: 0, bottom: 0, left: 0 };
   private driftWasHeld = false;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -62,18 +71,19 @@ export class TouchInput {
     });
   }
 
-  resize(width: number, height: number): void {
+  resize(width: number, height: number, safe?: SafeArea): void {
     this.width = width;
     this.height = height;
+    if (safe) this.safe = safe;
   }
 
   /** Pad geometry in CSS pixels, shared with the HUD so what is drawn is what is hit. */
   layout(): PadLayout {
     const radius = clamp(Math.min(this.width, this.height) * 0.11, 44, 92);
     const margin = radius + Math.min(this.width, this.height) * 0.05;
-    const y = this.height - margin;
-    const right = this.width - margin;
-    const left = margin;
+    const y = this.height - margin - this.safe.bottom;
+    const right = this.width - margin - this.safe.right;
+    const left = margin + this.safe.left;
     return this.settings.leftHanded
       ? { driftX: left, driftY: y, brakeX: right, brakeY: y, radius }
       : { driftX: right, driftY: y, brakeX: left, brakeY: y, radius };

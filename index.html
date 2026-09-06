@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <meta name="theme-color" content="#0b0d10" />
 <meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="apple-touch-icon" href="./icons/icon-192.png" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d10'/%3E%3Crect x='9' y='6' width='14' height='20' rx='3' fill='%23e0603a'/%3E%3Crect x='11' y='10' width='10' height='6' fill='%23121820'/%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -32,6 +35,15 @@
     touch-action: none; overscroll-behavior: none;
   }
   #game { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  /* A zero-size probe whose padding reports the device's safe insets to script. */
+  #safe-area {
+    position: fixed; top: 0; left: 0; width: 0; height: 0; visibility: hidden; pointer-events: none;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+  }
 
   #briefing, #summary, #garage {
     position: fixed; inset: 0; z-index: 10;
@@ -127,6 +139,7 @@
 </style>
 </head>
 <body>
+<div id="safe-area" aria-hidden="true"></div>
 <canvas id="game"></canvas>
 <div id="briefing">
   <div>

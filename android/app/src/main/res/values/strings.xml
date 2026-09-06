@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Getaway</string>
+    <string name="title_activity_main">Getaway</string>
+    <string name="package_name">com.catonblt.getaway</string>
+    <string name="custom_url_scheme">com.catonblt.getaway</string>
+</resources>

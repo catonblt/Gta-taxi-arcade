@@ -70,6 +70,18 @@ let toastText = '';
 let toastColor = '#e8eaee';
 let toastLeft = 0;
 
+/**
+ * Haptics through the standard vibration API rather than a plugin, so it works identically in a
+ * phone browser and inside the packaged app. Silently absent on devices that do not do this.
+ */
+function rumble(pattern: number | number[]): void {
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    // Some browsers throw rather than no-op. Not worth a single dropped frame.
+  }
+}
+
 function toast(text: string, color: string): void {
   toastText = text;
   toastColor = color;
@@ -135,10 +147,23 @@ function endShift(busted: boolean): void {
   if (shift.summary) showSummary(shift.summary, garage.cash, earnedRep);
 }
 
+/** Reads the device's safe insets off the CSS probe in index.html. */
+function safeArea() {
+  const probe = document.getElementById('safe-area');
+  if (!probe) return { top: 0, right: 0, bottom: 0, left: 0 };
+  const style = getComputedStyle(probe);
+  return {
+    top: parseFloat(style.paddingTop) || 0,
+    right: parseFloat(style.paddingRight) || 0,
+    bottom: parseFloat(style.paddingBottom) || 0,
+    left: parseFloat(style.paddingLeft) || 0,
+  };
+}
+
 function resize(): void {
   renderer.resize();
   camera.resize(renderer.cssWidth, renderer.cssHeight);
-  input.resize(renderer.cssWidth, renderer.cssHeight);
+  input.resize(renderer.cssWidth, renderer.cssHeight, safeArea());
 }
 resize();
 window.addEventListener('resize', resize);
@@ -174,6 +199,7 @@ function update(dt: number): void {
 
   if (police.events.busted) {
     bustedFor = BUST_HOLD;
+    rumble([40, 60, 120]);
     return;
   }
 
@@ -212,6 +238,7 @@ function update(dt: number): void {
     car.tiresShredded = true;
     toast('Tyres gone', '#d83a44');
     audio.thud(1);
+    rumble(60);
     fx.sparks(car.x, car.y, 18);
   }
   if (police.events.roadblockHit > 120) fx.sparks(car.x, car.y, 12);
@@ -403,6 +430,7 @@ function stepStyle(dt: number): void {
   const ram = police.events.ram * buildMods.ramTaken;
   const worstImpact = Math.max(car.events.impact, ram, police.events.roadblockHit);
   if (worstImpact > 60) audio.thud(Math.min(1, worstImpact / 320));
+  if (worstImpact > 150) rumble(Math.min(40, Math.round(worstImpact / 8)));
   // A PIT bar means trading paint with a cruiser costs you nothing but the paint.
   const comboImpact = buildMods.ramKeepsCombo ? Math.max(car.events.impact, police.events.roadblockHit) : worstImpact;
   if (style.impact(comboImpact)) toast('Combo lost', '#d83a44');
