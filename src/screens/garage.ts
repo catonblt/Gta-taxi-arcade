@@ -1,3 +1,4 @@
+import { DISTRICTS, districtById } from '../data/districts';
 import { PARTS, RARITY_COLOR, partById } from '../data/parts';
 import { VEHICLES, vehicleById } from '../data/vehicles';
 import { AXES, AXIS_BLURB, AXIS_LABEL, MAX_LEVEL, type Garage, type UpgradeAxis } from '../game/garage';
@@ -57,7 +58,9 @@ export class GarageScreen {
     this.text('g-cash', money(g.cash));
     this.text('g-rep', `${g.rep} rep`);
     this.text('g-blurb', g.vehicle.blurb);
+    this.text('g-district-blurb', districtById(g.district).blurb);
     this.text('g-slots', `${g.state.parts.length} of ${g.slots()} slots used`);
+    this.renderDistricts();
     this.renderCars();
     this.renderUpgrades();
     this.renderParts();
@@ -66,6 +69,35 @@ export class GarageScreen {
   private text(id: string, value: string): void {
     const node = document.getElementById(id);
     if (node) node.textContent = value;
+  }
+
+  /**
+   * Districts are the other half of progression: upgrades buy ACCESS to harder, better-paid
+   * ground rather than making the ground you know easier. A locked district still shows what it
+   * pays and what it costs in reputation, because knowing what you are working toward is most
+   * of the pull.
+   */
+  private renderDistricts(): void {
+    const host = document.getElementById('g-districts');
+    if (!host) return;
+    host.replaceChildren();
+
+    for (const d of DISTRICTS) {
+      const unlocked = this.garage.rep >= d.rep;
+      const button = element('button', 'car');
+      button.type = 'button';
+      button.setAttribute('aria-pressed', String(unlocked && this.garage.district === d.id));
+      button.append(element('span', 'name', d.name));
+      button.append(
+        element('span', 'meta', unlocked ? `pays x${d.payout} · heat to ${d.maxHeat}` : `${d.rep} rep`),
+      );
+      button.disabled = !unlocked;
+      button.addEventListener('click', () => {
+        this.garage.district = d.id;
+        this.refresh();
+      });
+      host.append(button);
+    }
   }
 
   private renderCars(): void {

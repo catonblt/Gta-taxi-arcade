@@ -3,8 +3,9 @@ import { GameLoop } from './core/loop';
 import { TouchInput } from './core/input';
 import { lerpAngle, lerp, clamp } from './core/math';
 import { Rng } from './core/rng';
-import docksSource from './data/districts/docks.city?raw';
+import { DISTRICTS, districtById, type District } from './data/districts';
 import { VEHICLES } from './data/vehicles';
+import { PARTS } from './data/parts';
 import { Garage } from './game/garage';
 import { JOB_KINDS, Jobs } from './game/jobs';
 import { loadGarage, saveGarage } from './game/save';
@@ -32,18 +33,22 @@ const camera = new Camera();
 const fx = new Fx();
 const rng = new Rng(20260906);
 
-const map = new TileMap(docksSource);
-const car = new Car({ ...VEHICLES[0].base });
-car.placeAt(map.spawn.x, map.spawn.y, 0);
-camera.snapTo(car.x, car.y);
-
-const traffic = new Traffic(map, rng, 20);
-const heat = new Heat();
-const police = new Police(map, rng);
 const garage = new Garage();
 loadGarage(garage);
 const shift = new Shift(garage);
-const jobs = new Jobs(map, rng, traffic);
+const heat = new Heat();
+const car = new Car({ ...VEHICLES[0].base });
+
+// The world is rebuilt per shift, because the district decides the map, the streets, and the
+// police who work them. Everything downstream reads these through the current bindings.
+let district: District = districtById(garage.district);
+let map = new TileMap(district.source);
+let traffic = new Traffic(map, rng, district.traffic);
+let police = new Police(map, rng);
+let jobs = new Jobs(map, rng, traffic);
+
+car.placeAt(map.spawn.x, map.spawn.y, 0);
+camera.snapTo(car.x, car.y);
 const style = new Style();
 const garageScreen = new GarageScreen(garage, () => startShift(), () => saveGarage(garage));
 const audio = new Audio();
@@ -79,6 +84,7 @@ function reset(): void {
   jobs.reset();
   style.reset();
   traffic.clear();
+  car.repairTires();
   bustedFor = 0;
   camera.snapTo(car.x, car.y);
 }
@@ -100,8 +106,18 @@ function applyBuild(): void {
 function startShift(): void {
   hideSummary();
   garageScreen.hide();
+
+  // Rebuild the world for the chosen district before anything reads it.
+  district = districtById(garage.district);
+  map = new TileMap(district.source);
+  traffic = new Traffic(map, rng, district.traffic);
+  police = new Police(map, rng);
+  jobs = new Jobs(map, rng, traffic);
+
   applyBuild();
   reset();
+  heat.ceiling = district.maxHeat;
+  heat.setLevel(district.heatFloor);
   shift.start();
 }
 
@@ -170,7 +186,7 @@ function update(dt: number): void {
   }
   if (jobs.events.completed) {
     // Style is money: arriving mid-combo is worth multiples of arriving cold.
-    const paid = Math.round(jobs.events.paid * style.multiplier * buildMods.payout);
+    const paid = Math.round(jobs.events.paid * style.multiplier * buildMods.payout * district.payout);
     shift.bookJob(jobs.events.completed, paid);
     toast(`Paid $${paid.toLocaleString('en-US')}`, '#5adca0');
     audio.chime();
@@ -187,7 +203,16 @@ function update(dt: number): void {
   // economy this costs real money, which is what makes running for one a decision.
   if (heat.canRespray(car, map)) {
     heat.respray();
+    // New plates and new rubber: the bay is the answer to a shredded set of tyres too.
+    car.repairTires();
     fx.smoke(car.x, car.y, 0, 0, 14);
+  }
+
+  if (police.events.spiked && !car.tiresShredded) {
+    car.tiresShredded = true;
+    toast('Tyres gone', '#d83a44');
+    audio.thud(1);
+    fx.sparks(car.x, car.y, 18);
   }
   if (police.events.roadblockHit > 120) fx.sparks(car.x, car.y, 12);
 
@@ -254,6 +279,25 @@ function render(alpha: number): void {
       { headlights: !t.wrecked },
     );
   }
+  const heli = police.helicopter;
+  if (heli.active) {
+    // The light lands on the ground, and the machine sits above it.
+    renderer.ctx.beginPath();
+    renderer.ctx.arc(heli.x, heli.y, 320, 0, Math.PI * 2);
+    renderer.ctx.fillStyle = 'rgba(255,240,190,0.07)';
+    renderer.ctx.fill();
+  }
+  for (const strip of police.strips) {
+    if (strip.spent) continue;
+    renderer.ctx.save();
+    renderer.ctx.translate(strip.x, strip.y);
+    renderer.ctx.rotate(strip.angle);
+    renderer.ctx.fillStyle = '#d8d0c0';
+    renderer.ctx.fillRect(-strip.reach, -4, strip.reach * 2, 8);
+    renderer.ctx.fillStyle = '#20262f';
+    for (let i = -strip.reach + 6; i < strip.reach; i += 11) renderer.ctx.fillRect(i, -6, 3, 12);
+    renderer.ctx.restore();
+  }
   for (const block of police.roadblocks) {
     for (const parked of block.cars) {
       renderer.drawCar(parked.x, parked.y, parked.angle, parked.stats.length, parked.stats.width, '#1e2530', { roofLight: elapsed });
@@ -266,7 +310,10 @@ function render(alpha: number): void {
       c.stats.length, c.stats.width, '#20262f', { headlights: true, roofLight: elapsed },
     );
   }
-  renderer.drawCar(x, y, angle, car.stats.length, car.stats.width, garage.vehicle.color, { headlights: true });
+  renderer.drawCar(x, y, angle, car.stats.length, car.stats.width, garage.vehicle.color, { headlights: true, player: true });
+  if (heli.active) {
+    renderer.drawCar(heli.x, heli.y, elapsed * 0.6, 46, 16, '#161b22', { roofLight: elapsed });
+  }
   renderer.endWorld();
 
   hud.draw(
@@ -293,6 +340,8 @@ function render(alpha: number): void {
         x: (cop.car.x - camera.x) * camera.scale + renderer.cssWidth / 2,
         y: (cop.car.y - camera.y) * camera.scale + renderer.cssHeight / 2,
       })),
+      district: district.name,
+      tiresShredded: car.tiresShredded,
       time: elapsed,
       fps: loop.stats.fps,
       showDebug: debug,
@@ -358,7 +407,7 @@ function stepStyle(dt: number): void {
   const comboImpact = buildMods.ramKeepsCombo ? Math.max(car.events.impact, police.events.roadblockHit) : worstImpact;
   if (style.impact(comboImpact)) toast('Combo lost', '#d83a44');
 
-  if (style.events.tip > 0) shift.tip(style.events.tip * buildMods.payout);
+  if (style.events.tip > 0) shift.tip(style.events.tip * buildMods.payout * district.payout);
 }
 
 function toScreen(wx: number, wy: number): { x: number; y: number } {
@@ -424,4 +473,6 @@ loop.start();
 window.addEventListener('keydown', (e) => { if (e.code === 'KeyR') reset(); });
 
 // Exposed so the headless harness can drive and inspect a real build.
-(window as unknown as Record<string, unknown>).__getaway = { car, map, input, loop, camera, traffic, heat, police, jobs, shift, garage, garageScreen, style, audio, startShift, reset, clamp, MAX_MULTIPLIER };
+(window as unknown as Record<string, unknown>).__getaway = { car, input, loop, camera, heat, shift, garage, garageScreen, style, audio, startShift, reset, clamp, MAX_MULTIPLIER,
+  get traffic() { return traffic; }, get police() { return police; }, get jobs() { return jobs; },
+  get map() { return map; }, get district() { return district; }, districts: DISTRICTS, vehicles: VEHICLES, parts: PARTS };

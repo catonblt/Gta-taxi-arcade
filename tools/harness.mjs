@@ -223,10 +223,60 @@ await wait(200);
 await shot('garage');
 await read(() => { window.__getaway.garageScreen.hide(); });
 
-// --- Phase 9: the perf window that matters — busy streets, live pursuit, nothing stalling. ---
+// --- Phase 9: every district loads, is drivable from its spawn, and has the landmarks the
+// escape systems depend on. A district with no respray bay is a district you cannot survive.
+const districts = await read(async () => {
+  const g = window.__getaway;
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  const out = [];
+  for (const d of g.districts) {
+    g.garage.rep = 999;
+    g.garage.district = d.id;
+    g.startShift();
+    // Long enough for a standing start to cover real ground: the Beater needs about a second
+    // to be unambiguously moving.
+    await pause(1000);
+    out.push({
+      id: d.id,
+      spawnSolid: g.map.isSolidWorld(g.car.x, g.car.y),
+      resprays: g.map.markers.filter((m) => m.kind === 'respray').length,
+      hideouts: g.map.markers.filter((m) => m.kind === 'hideout').length,
+      moved: Math.round(Math.hypot(g.car.x - g.map.spawn.x, g.car.y - g.map.spawn.y)),
+      heatFloor: g.heat.level,
+      ceiling: g.heat.ceiling,
+    });
+  }
+  return out;
+});
+
+// --- Phase 10: the top of the ladder. A helicopter that holds you through walls, and strips
+// laid across the road ahead.
 await read(() => {
   const g = window.__getaway;
-  g.heat.setLevel(3);
+  g.garage.rep = 999;
+  g.garage.district = 'hills';
+  g.startShift();
+  g.heat.setLevel(5);
+});
+await wait(7000);
+await shot('heat5');
+const topRung = await read(() => {
+  const g = window.__getaway;
+  return {
+    heliActive: g.police.helicopter.active,
+    strips: g.police.strips.length,
+    roadblocks: g.police.roadblocks.length,
+    cops: g.police.cops.length,
+    level: g.heat.level,
+  };
+});
+
+// --- Phase 11: the perf window that matters — busy streets, live pursuit, nothing stalling. ---
+await read(() => {
+  const g = window.__getaway;
+  g.garage.district = 'downtown';
+  g.startShift();
+  g.heat.setLevel(4);
   g.loop.resetPerf();
 });
 await wait(3000);
@@ -246,7 +296,7 @@ const perf = await read(() => {
 await browser.close();
 server.close();
 
-console.log(JSON.stringify({ straightLine, chase, laidLow, shiftLoop, style, ended, garage, perf }, null, 2));
+console.log(JSON.stringify({ straightLine, chase, laidLow, shiftLoop, style, ended, garage, districts, topRung, perf }, null, 2));
 
 const failures = [];
 const check = (condition, message) => { if (!condition) failures.push(message); };
@@ -276,6 +326,15 @@ check(garage.drivenTop === garage.afterTop, 'the car on the street is not the ca
 check(garage.heatGain < 1, 'a fitted part did not reach the rules');
 check(garage.rows === 4 && garage.cars >= 6 && garage.parts > 0, 'the garage screen did not render its lists');
 check(garage.saved, 'the garage was never written to storage');
+for (const d of districts) {
+  check(!d.spawnSolid, `${d.id} spawns the player inside a wall`);
+  check(d.resprays > 0, `${d.id} has no respray bay`);
+  check(d.hideouts > 0, `${d.id} has nowhere to lie low`);
+  check(d.moved > 50, `${d.id} is not drivable from its spawn`);
+  check(d.heatFloor >= 0 && d.ceiling >= d.heatFloor, `${d.id} has an impossible heat range`);
+}
+check(topRung.heliActive, 'rung 5 never put a helicopter up');
+check(topRung.cops >= 4, `rung 5 only fielded ${topRung.cops} cars`);
 check(!perf.inSolid, 'the car ended up inside a solid tile');
 check(perf.frames > 120, `only ${perf.frames} sim ticks ran`);
 // A stray spike is GC; a stream of them is our problem. 8ms leaves room for a slower phone core.

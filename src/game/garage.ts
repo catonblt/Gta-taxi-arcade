@@ -37,6 +37,7 @@ export interface GarageSave {
   shifts: number;
   bestShift: number;
   current: string;
+  district: string;
   owned: Record<string, CarState>;
   /** Parts bought, wherever they are currently fitted. */
   inventory: string[];
@@ -57,6 +58,8 @@ export class Garage {
   shifts = 0;
   bestShift = 0;
   current = VEHICLES[0].id;
+  /** The district the next shift will run in. */
+  district = 'docks';
   readonly owned: Record<string, CarState> = { [VEHICLES[0].id]: freshCar() };
   readonly inventory: string[] = [];
 
@@ -180,6 +183,7 @@ export class Garage {
       shifts: this.shifts,
       bestShift: this.bestShift,
       current: this.current,
+      district: this.district,
       owned: JSON.parse(JSON.stringify(this.owned)) as Record<string, CarState>,
       inventory: [...this.inventory],
     };
@@ -198,6 +202,7 @@ export class Garage {
     }
     if (Object.keys(this.owned).length === 0) this.owned[VEHICLES[0].id] = freshCar();
     this.current = this.owned[data.current] ? data.current : Object.keys(this.owned)[0];
+    this.district = data.district ?? 'docks';
     this.inventory.length = 0;
     for (const id of data.inventory ?? []) if (partById(id)) this.inventory.push(id);
   }

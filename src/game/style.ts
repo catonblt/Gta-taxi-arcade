@@ -9,7 +9,7 @@ const DECAY_PER_SECOND = 0.45;
 const BREAK_IMPACT = 135;
 
 /** Immediate cash for each flourish, before the multiplier is applied. */
-const TIPS = { shave: 14, driftPerSecond: 9, dodge: 45 } as const;
+const TIPS = { shave: 7, driftPerSecond: 5, dodge: 22 } as const;
 /** What each flourish adds to the multiplier. */
 const GAIN = { shave: 0.14, driftPerSecond: 0.12, dodge: 0.3 } as const;
 

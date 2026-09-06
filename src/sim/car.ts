@@ -42,6 +42,8 @@ export class Car {
 
   /** Scaled by fitted parts. 1 is the bare car. */
   driftBoostScale = 1;
+  /** Set by a spike strip: the car still runs, but it will not hold a line or a top end. */
+  tiresShredded = false;
 
   private driftHeldFor = 0;
   private brakeWasDown = false;
@@ -52,6 +54,11 @@ export class Car {
 
   get speed(): number {
     return Math.hypot(this.vx, this.vy);
+  }
+
+  /** Fresh rubber. Called at a respray and at the start of every shift. */
+  repairTires(): void {
+    this.tiresShredded = false;
   }
 
   placeAt(x: number, y: number, angle: number): void {
@@ -80,7 +87,9 @@ export class Car {
     // Drag is expressed as a fraction of the car's own acceleration so that thrust and drag
     // cancel exactly at topSpeed: the number in the data file IS the speed you reach, which
     // keeps the upgrade screen honest.
-    const ratio = vLong / s.topSpeed;
+    // Shredded tyres cost top end and, far more painfully, grip.
+    const topSpeed = s.topSpeed * (this.tiresShredded ? 0.76 : 1);
+    const ratio = vLong / topSpeed;
     const drag = s.accel * ratio * Math.abs(ratio);
     if (input.throttle > 0) {
       vLong += (s.accel * input.throttle - drag) * dt;
@@ -99,7 +108,7 @@ export class Car {
       if (vLong > CRAWL * 0.2) {
         vLong = Math.max(0, vLong - s.brake * dt);
       } else if (this.reverseArmed) {
-        vLong = Math.max(-s.topSpeed * 0.35, vLong - s.accel * 0.7 * dt);
+        vLong = Math.max(-topSpeed * 0.35, vLong - s.accel * 0.7 * dt);
       } else {
         vLong = 0;
         vLat = 0;
@@ -119,7 +128,7 @@ export class Car {
     // Bleeding lateral velocity is the whole model: bleed it fast and the car is on rails,
     // bleed it slowly and the car slides while the nose keeps turning. That is the drift.
     const surface = map.gripAtWorld(this.x, this.y);
-    const gripRate = (this.drifting ? s.driftGrip : s.grip) * surface;
+    const gripRate = (this.drifting ? s.driftGrip : s.grip) * surface * (this.tiresShredded ? 0.55 : 1);
     vLat *= damp(gripRate, dt);
 
     // Sliding scrubs forward speed, so drifting everywhere is not free.
@@ -160,7 +169,7 @@ export class Car {
     // --- Steering -----------------------------------------------------------------------
     // Authority ramps in off the line, then falls away at speed so the car stays stable flat out.
     const speedRamp = clamp(Math.abs(vLong) / 90, 0, 1);
-    const highSpeedFalloff = 1 - 0.35 * clamp(Math.abs(vLong) / s.topSpeed, 0, 1);
+    const highSpeedFalloff = 1 - 0.35 * clamp(Math.abs(vLong) / topSpeed, 0, 1);
     const driftAuthority = this.drifting ? 1.55 : 1;
     const dir = vLong < -1 ? -1 : 1;
     this.angle += s.steerRate * input.steer * speedRamp * highSpeedFalloff * driftAuthority * dir * dt;

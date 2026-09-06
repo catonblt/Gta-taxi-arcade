@@ -17,6 +17,8 @@ export interface HudModel {
   pursuers: readonly { x: number; y: number }[];
   /** Screen-space job markers: offers and the current objective. */
   markers: readonly { x: number; y: number; color: string; label: string; objective: boolean }[];
+  district: string;
+  tiresShredded: boolean;
   multiplier: number;
   styleEvent: 'shave' | 'drift' | 'dodge' | 'break' | null;
   /** Transient feedback line: job taken, job blown, level shed. */
@@ -120,6 +122,16 @@ export class Hud {
     ctx.fillStyle = '#5adca0';
     ctx.font = '500 13px ui-monospace, monospace';
     ctx.fillText(`$${Math.floor(model.cash).toLocaleString('en-US')}`, cx, 44);
+
+    if (model.tiresShredded) {
+      // A shredded set changes how the car behaves for the rest of the night, so it has to be
+      // on screen rather than something the player only feels and cannot name.
+      ctx.fillStyle = '#d83a44';
+      ctx.font = '600 10px ui-monospace, monospace';
+      ctx.letterSpacing = '2px';
+      ctx.fillText('TYRES GONE — FIND A RESPRAY', cx, 60);
+      ctx.letterSpacing = '0px';
+    }
   }
 
   /** In-world job pins, clamped to the screen edge when they are somewhere off it. */

@@ -28,6 +28,10 @@ const STUCK_SECONDS = 1.1;
 const STUCK_SPEED = 28;
 const REVERSE_SECONDS = 0.85;
 
+/** The chopper is slower than a quick car, so a gap can be opened — but never a clean break. */
+const HELI_SPEED = 290;
+const SPOTLIGHT_RADIUS = 320;
+
 /** Seconds boxed in by two or more cars before the shift ends. */
 const BUST_SECONDS = 1.6;
 const BUST_RADIUS = 95;
@@ -64,27 +68,56 @@ export interface Doctrine {
   cars: number;
   intercept: boolean;
   roadblocks: boolean;
+  spikes: boolean;
+  helicopter: boolean;
+  /** Interceptors are quicker and will commit to a ram. */
+  interceptors: boolean;
 }
 
 export const DOCTRINE: readonly Doctrine[] = [
-  { cars: 0, intercept: false, roadblocks: false },
-  { cars: 1, intercept: false, roadblocks: false }, // one cruiser, straight pursuit
-  { cars: 2, intercept: true, roadblocks: false },  // a second car cuts corners to head you off
-  { cars: 3, intercept: true, roadblocks: true },   // junctions start closing ahead of you
-  { cars: 4, intercept: true, roadblocks: true },
-  { cars: 5, intercept: true, roadblocks: true },
+  { cars: 0, intercept: false, roadblocks: false, spikes: false, helicopter: false, interceptors: false },
+  // One cruiser, straight pursuit: learn to corner and to break a sight line.
+  { cars: 1, intercept: false, roadblocks: false, spikes: false, helicopter: false, interceptors: false },
+  // A second car cuts to where you are going: running in a straight line stops working.
+  { cars: 2, intercept: true, roadblocks: false, spikes: false, helicopter: false, interceptors: false },
+  // Junctions start closing ahead of you: learn the alleys.
+  { cars: 3, intercept: true, roadblocks: true, spikes: false, helicopter: false, interceptors: false },
+  // Spike strips and faster cars that will PIT you: watch the road surface, not just the mirrors.
+  { cars: 4, intercept: true, roadblocks: true, spikes: true, helicopter: false, interceptors: true },
+  // A helicopter holds you in its light through every wall: only cover breaks it.
+  { cars: 5, intercept: true, roadblocks: true, spikes: true, helicopter: true, interceptors: true },
 ];
+
+export interface SpikeStrip {
+  x: number;
+  y: number;
+  angle: number;
+  /** Half-length of the strip in world units. */
+  reach: number;
+  age: number;
+  spent: boolean;
+}
+
+export interface Helicopter {
+  x: number;
+  y: number;
+  active: boolean;
+}
 
 export interface PoliceEvents {
   busted: boolean;
   ram: number;
   roadblockHit: number;
+  /** Set on the step the player drives over a live strip. */
+  spiked: boolean;
 }
 
 export class Police {
   readonly cops: Cop[] = [];
   readonly roadblocks: Roadblock[] = [];
-  readonly events: PoliceEvents = { busted: false, ram: 0, roadblockHit: 0 };
+  readonly strips: SpikeStrip[] = [];
+  readonly helicopter: Helicopter = { x: 0, y: 0, active: false };
+  readonly events: PoliceEvents = { busted: false, ram: 0, roadblockHit: 0, spiked: false };
 
   private readonly grid: PathGrid;
   /** Seconds of unbroken sight the police need before they call it in. Raised by a jammer. */
@@ -93,6 +126,7 @@ export class Police {
   private gridAge = 0;
   private boxedFor = 0;
   private roadblockCooldown = 0;
+  private spikeCooldown = 0;
 
   constructor(
     private readonly map: TileMap,
@@ -104,6 +138,8 @@ export class Police {
   clear(): void {
     this.cops.length = 0;
     this.roadblocks.length = 0;
+    this.strips.length = 0;
+    this.helicopter.active = false;
     this.sightHeld = 0;
     this.boxedFor = 0;
     this.roadblockCooldown = 0;
@@ -123,13 +159,19 @@ export class Police {
     // A jammer does not make you invisible, it buys you the moment before the call goes out —
     // so a glimpse down a side street costs nothing but sitting in the open still gives you up.
     this.sightHeld = inSight ? this.sightHeld + dt : 0;
-    return inSight && this.sightHeld >= this.sightDelay;
+    if (inSight && this.sightHeld >= this.sightDelay) return true;
+
+    // The spotlight does not care about walls, only about cover.
+    const heli = this.helicopter;
+    if (!heli.active) return false;
+    return Math.hypot(heli.x - px, heli.y - py) < SPOTLIGHT_RADIUS && !this.underCover(px, py);
   }
 
   step(player: Car, heat: Heat, dt: number): void {
     this.events.busted = false;
     this.events.ram = 0;
     this.events.roadblockHit = 0;
+    this.events.spiked = false;
 
     const doctrine = DOCTRINE[clamp(heat.level, 0, DOCTRINE.length - 1)];
     const hunting = heat.pursuit !== 'clear';
@@ -162,6 +204,8 @@ export class Police {
     }
 
     this.stepRoadblocks(player, heat, doctrine, dt);
+    this.stepSpikes(player, heat, doctrine, dt);
+    this.stepHelicopter(player, heat, doctrine, dt);
     this.resolveContacts(player);
     this.checkBust(player, heat, dt);
   }
@@ -313,6 +357,83 @@ export class Police {
     }
     this.roadblocks.push({ cars, age: 0 });
     this.roadblockCooldown = 11;
+  }
+
+  /**
+   * Spike strips are laid across the road well ahead of the car and stay put. They are the first
+   * threat that is not a car: the counter is to read the road surface and take another line,
+   * which is why they only appear once the player has learned to watch their mirrors.
+   */
+  private stepSpikes(player: Car, heat: Heat, doctrine: Doctrine, dt: number): void {
+    this.spikeCooldown -= dt;
+
+    for (let i = this.strips.length - 1; i >= 0; i--) {
+      const strip = this.strips[i];
+      strip.age += dt;
+      if (strip.age > 40 || Math.hypot(strip.x - player.x, strip.y - player.y) > DESPAWN) {
+        this.strips.splice(i, 1);
+        continue;
+      }
+      if (strip.spent) continue;
+
+      // Distance from the car to the line the strip lies along.
+      const dx = player.x - strip.x;
+      const dy = player.y - strip.y;
+      const along = dx * Math.cos(strip.angle) + dy * Math.sin(strip.angle);
+      const across = -dx * Math.sin(strip.angle) + dy * Math.cos(strip.angle);
+      if (Math.abs(along) <= strip.reach && Math.abs(across) < 14) {
+        strip.spent = true;
+        this.events.spiked = true;
+      }
+    }
+
+    if (!doctrine.spikes || !heat.seen || this.spikeCooldown > 0) return;
+    if (player.speed < 150) return;
+
+    // Far enough ahead to be seen and swerved around; close enough that it is still your road.
+    const ahead = 17 * TILE;
+    const dirX = player.vx / Math.max(player.speed, 1);
+    const dirY = player.vy / Math.max(player.speed, 1);
+    const x = player.x + dirX * ahead;
+    const y = player.y + dirY * ahead;
+    if (this.map.atWorld(x, y) !== Tile.Road) return;
+
+    this.strips.push({ x, y, angle: Math.atan2(dirX, -dirY), reach: TILE * 0.9, age: 0, spent: false });
+    this.spikeCooldown = 14;
+  }
+
+  /**
+   * The helicopter holds you in its light through walls, so breaking a sight line stops working
+   * and the only answer is cover: an alley, a hideout, a respray bay. It is slower than a quick
+   * car, so you can open a gap — you just cannot make it forget you.
+   */
+  private stepHelicopter(player: Car, heat: Heat, doctrine: Doctrine, dt: number): void {
+    const heli = this.helicopter;
+    if (!doctrine.helicopter || heat.pursuit === 'clear') {
+      heli.active = false;
+      return;
+    }
+    if (!heli.active) {
+      // Arrives from off the map rather than appearing overhead.
+      heli.active = true;
+      heli.x = player.x - 1400;
+      heli.y = player.y - 1400;
+    }
+
+    const target = heat.seen ? player : { x: heat.lastKnownX, y: heat.lastKnownY };
+    const dx = target.x - heli.x;
+    const dy = target.y - heli.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 1) {
+      heli.x += (dx / d) * HELI_SPEED * dt;
+      heli.y += (dy / d) * HELI_SPEED * dt;
+    }
+  }
+
+  /** True while the player is under something the spotlight cannot reach through. */
+  private underCover(px: number, py: number): boolean {
+    const tile = this.map.atWorld(px, py);
+    return tile === Tile.Alley || tile === Tile.Hideout || tile === Tile.Respray;
   }
 
   private resolveContacts(player: Car): void {

@@ -21,9 +21,9 @@ export interface Tier {
 }
 
 export const TIERS: readonly Tier[] = [
-  { name: 'Local', color: '#5adca0', payout: 260, fareSeconds: 46, heatOnAccept: 0 },
-  { name: 'Crosstown', color: '#f0a63c', payout: 640, fareSeconds: 62, heatOnAccept: 1 },
-  { name: 'Hot', color: '#d83a44', payout: 1450, fareSeconds: 78, heatOnAccept: 2 },
+  { name: 'Local', color: '#5adca0', payout: 180, fareSeconds: 46, heatOnAccept: 0 },
+  { name: 'Crosstown', color: '#f0a63c', payout: 420, fareSeconds: 62, heatOnAccept: 1 },
+  { name: 'Hot', color: '#d83a44', payout: 900, fareSeconds: 78, heatOnAccept: 2 },
 ];
 
 export interface JobDefinition {

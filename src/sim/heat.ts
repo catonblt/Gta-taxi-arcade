@@ -35,6 +35,8 @@ export interface HeatEvents {
  */
 export class Heat {
   level = 0;
+  /** The highest rung this district's police are willing to climb to. */
+  ceiling = MAX_HEAT;
   seen = false;
   pursuit: Pursuit = 'clear';
 
@@ -69,9 +71,9 @@ export class Heat {
 
   /** Raises heat by a fraction of a level. Whole levels tick over as the fraction fills. */
   add(amount: number): void {
-    if (this.level >= MAX_HEAT) return;
+    if (this.level >= this.ceiling) return;
     this.accrual += amount;
-    while (this.accrual >= 1 && this.level < MAX_HEAT) {
+    while (this.accrual >= 1 && this.level < this.ceiling) {
       this.accrual -= 1;
       this.level++;
       this.events.levelChanged = 1;
@@ -80,7 +82,7 @@ export class Heat {
   }
 
   setLevel(level: number): void {
-    const next = Math.max(0, Math.min(MAX_HEAT, level));
+    const next = Math.max(0, Math.min(this.ceiling, level));
     if (next > this.level) this.report();
     if (next !== this.level) this.events.levelChanged = Math.sign(next - this.level);
     this.level = next;

@@ -125,9 +125,20 @@ export class Renderer {
   drawCar(
     x: number, y: number, angle: number,
     length: number, width: number, color: string,
-    options: { headlights?: boolean; roofLight?: number } = {},
+    options: { headlights?: boolean; roofLight?: number; player?: boolean } = {},
   ): void {
     const { ctx } = this;
+
+    // A ring under the player's car. In a five-car pile-up at the top of the ladder it is
+    // genuinely easy to lose track of which one you are driving, and losing that is fatal.
+    if (options.player) {
+      ctx.beginPath();
+      ctx.arc(x, y, length * 0.78, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(240,166,60,0.4)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(angle);
