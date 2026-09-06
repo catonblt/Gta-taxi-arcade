@@ -83,6 +83,35 @@ describe('car physics', () => {
     expect(car.speed).toBeGreaterThan(before);
   });
 
+  it('parks and stays parked while the brake is held', () => {
+    const map = openMap(64);
+    const car = new Car({ ...VEHICLES[0].base });
+    car.placeAt(TILE * 32, TILE * 32, 0);
+    run(car, map, 2);
+    expect(car.speed).toBeGreaterThan(100);
+
+    // Hold the brake from motion: the car should stop and stay stopped, not roll backwards.
+    run(car, map, 4, { throttle: 0, brake: 1 });
+    expect(car.speed).toBeLessThan(1);
+    const restingX = car.x;
+    run(car, map, 3, { throttle: 0, brake: 1 });
+    expect(Math.abs(car.x - restingX)).toBeLessThan(1);
+  });
+
+  it('reverses when the brake is pressed again from a standstill', () => {
+    const map = openMap(64);
+    const car = new Car({ ...VEHICLES[0].base });
+    car.placeAt(TILE * 32, TILE * 32, 0);
+    run(car, map, 2);
+    run(car, map, 3, { throttle: 0, brake: 1 });
+    const stoppedX = car.x;
+
+    // Release, then press again: now it backs up.
+    run(car, map, 0.2, { throttle: 0, brake: 0 });
+    run(car, map, 1.2, { throttle: 0, brake: 1 });
+    expect(car.x).toBeLessThan(stoppedX - 5);
+  });
+
   it('never leaves the car inside a wall', () => {
     const map = openMap(24);
     const car = new Car({ ...VEHICLES[0].base });

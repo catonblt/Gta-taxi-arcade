@@ -14,6 +14,8 @@ export interface ShiftSummary {
   reason: string;
   detail: string;
   earned: number;
+  tips: number;
+  peakMultiplier: number;
   banked: number;
   lost: number;
   jobs: number;
@@ -31,6 +33,8 @@ export class Shift {
   timeLeft = START_SECONDS;
   /** Earned this shift and still at risk. */
   pending = 0;
+  /** Of the pending pile, how much came from driving rather than delivering. */
+  tips = 0;
   elapsed = 0;
   summary: ShiftSummary | null = null;
 
@@ -40,6 +44,7 @@ export class Shift {
     this.state = 'running';
     this.timeLeft = START_SECONDS;
     this.pending = 0;
+    this.tips = 0;
     this.elapsed = 0;
     this.summary = null;
   }
@@ -55,11 +60,20 @@ export class Shift {
     return this.state === 'running' && this.timeLeft <= 0;
   }
 
+  /** Style money, paid the moment it is earned so the flourish and the reward are one event. */
+  tip(amount: number): void {
+    this.pending += amount;
+    this.tips += amount;
+  }
+
   /** A completed delivery pays cash and hands back whatever was left on the fare's own clock. */
   bookJob(job: Job, amount: number): void {
     this.pending += amount;
     this.timeLeft += Math.min(job.fareLeft, MAX_TIME_BONUS);
   }
+
+  /** Best multiplier reached, handed in by the style system when the shift closes. */
+  peakMultiplier = 1;
 
   busted(hot: boolean, jobs: number, blown: number): void {
     const fee = hot ? IMPOUND_FEE : 0;
@@ -74,19 +88,24 @@ export class Shift {
   private end(reason: string, detail: string, lost: number, jobs = 0, blown = 0): void {
     if (this.state === 'over') return;
     this.state = 'over';
-    const banked = Math.max(0, this.pending - lost);
+    // Tips accrue in fractions of a dollar so that a half-second slide still counts; nobody
+    // should ever be shown $113.40000000000002.
+    const banked = Math.round(Math.max(0, this.pending - lost));
     this.career.bank(banked);
     this.career.jobsCompleted += jobs;
     this.summary = {
       reason,
       detail,
-      earned: this.pending,
+      earned: Math.round(this.pending),
+      tips: Math.round(this.tips),
+      peakMultiplier: this.peakMultiplier,
       banked,
-      lost: Math.min(lost, this.pending + IMPOUND_FEE),
+      lost: Math.round(Math.min(lost, this.pending + IMPOUND_FEE)),
       jobs,
       blown,
       seconds: this.elapsed,
     };
     this.pending = 0;
+    this.tips = 0;
   }
 }

@@ -1,3 +1,4 @@
+import { Audio } from './core/audio';
 import { GameLoop } from './core/loop';
 import { TouchInput } from './core/input';
 import { lerpAngle, lerp, clamp } from './core/math';
@@ -7,6 +8,7 @@ import { VEHICLES } from './data/vehicles';
 import { Career } from './game/career';
 import { JOB_KINDS, Jobs } from './game/jobs';
 import { Shift } from './game/shift';
+import { MAX_MULTIPLIER, Style } from './game/style';
 import { hideSummary, showSummary } from './screens/summary';
 import { Car } from './sim/car';
 import { Heat, HIDEOUT_SECONDS } from './sim/heat';
@@ -40,6 +42,14 @@ const police = new Police(map, rng);
 const career = new Career();
 const shift = new Shift(career);
 const jobs = new Jobs(map, rng, traffic);
+const style = new Style();
+const audio = new Audio();
+
+/** Band around a car that counts as threading it: closer than this and you have hit it. */
+const SHAVE_INNER = 30;
+const SHAVE_OUTER = 50;
+const SHAVE_MIN_SPEED = 150;
+const SHAVE_COOLDOWN = 1.2;
 
 /** Seconds of the BUSTED card before the summary appears. */
 const BUST_HOLD = 1.8;
@@ -64,6 +74,7 @@ function reset(): void {
   heat.reset();
   police.clear();
   jobs.reset();
+  style.reset();
   traffic.clear();
   bustedFor = 0;
   camera.snapTo(car.x, car.y);
@@ -76,6 +87,7 @@ function startShift(): void {
 }
 
 function endShift(busted: boolean): void {
+  shift.peakMultiplier = style.peak;
   if (busted) shift.busted(heat.level > 0, jobs.completed, jobs.blown);
   else shift.clockOut(jobs.completed, jobs.blown);
   if (shift.summary) showSummary(shift.summary, career.cash);
@@ -93,6 +105,7 @@ window.addEventListener('orientationchange', resize);
 let debug = new URLSearchParams(location.search).has('debug');
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') debug = !debug;
+  if (e.code === 'KeyM') audio.setMuted(!audio.muted);
   // Debug: jump straight to a rung to exercise a doctrine without earning it first.
   const rung = Number(e.key);
   if (debug && rung >= 0 && rung <= 5 && e.key.length === 1) heat.setLevel(rung);
@@ -122,14 +135,19 @@ function update(dt: number): void {
     return;
   }
 
+  stepStyle(dt);
+
   jobs.step(car, heat, dt);
   toastLeft = Math.max(0, toastLeft - dt);
   if (jobs.events.accepted) {
     toast(`${JOB_KINDS[jobs.events.accepted.kind].label} taken`, jobs.events.accepted.tier.color);
   }
   if (jobs.events.completed) {
-    shift.bookJob(jobs.events.completed, jobs.events.paid);
-    toast(`Paid $${jobs.events.paid.toLocaleString('en-US')}`, '#5adca0');
+    // Style is money: arriving mid-combo is worth multiples of arriving cold.
+    const paid = Math.round(jobs.events.paid * style.multiplier);
+    shift.bookJob(jobs.events.completed, paid);
+    toast(`Paid $${paid.toLocaleString('en-US')}`, '#5adca0');
+    audio.chime();
     fx.sparks(car.x, car.y, 16);
   }
   if (jobs.events.failed) toast(jobs.events.failed.failReason, '#d83a44');
@@ -191,6 +209,7 @@ function update(dt: number): void {
 
   fx.step(dt);
   camera.follow(car.x, car.y, car.vx, car.vy, car.stats.topSpeed, dt);
+  audio.update(car.speed / car.stats.topSpeed, heat.seen, elapsed);
 }
 
 function render(alpha: number): void {
@@ -237,6 +256,8 @@ function render(alpha: number): void {
       canRespray: heat.canRespray(car, map),
       markers: buildMarkers(),
       toast: toastLeft > 0 ? { text: toastText, color: toastColor, alpha: Math.min(1, toastLeft / 0.5) } : null,
+      multiplier: style.multiplier,
+      styleEvent: style.events.last,
       timeLeft: shift.timeLeft,
       cash: shift.pending,
       job: buildJobBanner(),
@@ -258,10 +279,48 @@ const briefing = document.getElementById('briefing');
 const startButton = document.getElementById('start');
 startButton?.addEventListener('click', () => {
   briefing?.setAttribute('hidden', '');
-  // Only start the clock once the player's hands are on it.
+  // A real user gesture is the only moment a browser will let the audio context open.
+  audio.start();
   startShift();
 });
 document.getElementById('again')?.addEventListener('click', startShift);
+
+/**
+ * The flourishes: threading traffic, holding a slide, and a pursuer committing to a ram and
+ * getting nothing. Each pays immediately and lifts the multiplier; a real crash takes it away.
+ */
+function stepStyle(dt: number): void {
+  style.step(dt);
+
+  if (car.drifting && car.slipAngle > 0.3 && car.speed > 120) style.drifting(dt);
+
+  for (const t of traffic.cars) {
+    t.shaveCooldown = Math.max(0, t.shaveCooldown - dt);
+    if (t.wrecked || t.shaveCooldown > 0 || car.speed < SHAVE_MIN_SPEED) continue;
+    const d = Math.hypot(t.x - car.x, t.y - car.y);
+    if (d > SHAVE_INNER && d < SHAVE_OUTER) {
+      style.closeShave();
+      t.shaveCooldown = SHAVE_COOLDOWN;
+    }
+  }
+
+  for (const cop of police.cops) {
+    cop.shaveCooldown = Math.max(0, cop.shaveCooldown - dt);
+    if (cop.shaveCooldown > 0 || police.events.ram > 0) continue;
+    const d = Math.hypot(cop.car.x - car.x, cop.car.y - car.y);
+    // A pursuer this close, this fast, that failed to make contact, has just been dodged.
+    if (d > SHAVE_INNER && d < SHAVE_OUTER + 14 && cop.car.speed > 180 && car.speed > SHAVE_MIN_SPEED) {
+      style.copDodge();
+      cop.shaveCooldown = 1.6;
+    }
+  }
+
+  const worstImpact = Math.max(car.events.impact, police.events.ram, police.events.roadblockHit);
+  if (worstImpact > 60) audio.thud(Math.min(1, worstImpact / 320));
+  if (style.impact(worstImpact)) toast('Combo lost', '#d83a44');
+
+  if (style.events.tip > 0) shift.tip(style.events.tip);
+}
 
 function toScreen(wx: number, wy: number): { x: number; y: number } {
   return {
@@ -326,4 +385,4 @@ loop.start();
 window.addEventListener('keydown', (e) => { if (e.code === 'KeyR') reset(); });
 
 // Exposed so the headless harness can drive and inspect a real build.
-(window as unknown as Record<string, unknown>).__getaway = { car, map, input, loop, camera, traffic, heat, police, jobs, shift, career, startShift, reset, clamp };
+(window as unknown as Record<string, unknown>).__getaway = { car, map, input, loop, camera, traffic, heat, police, jobs, shift, career, style, audio, startShift, reset, clamp, MAX_MULTIPLIER };

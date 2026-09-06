@@ -17,6 +17,8 @@ export interface HudModel {
   pursuers: readonly { x: number; y: number }[];
   /** Screen-space job markers: offers and the current objective. */
   markers: readonly { x: number; y: number; color: string; label: string; objective: boolean }[];
+  multiplier: number;
+  styleEvent: 'shave' | 'drift' | 'dodge' | 'break' | null;
   /** Transient feedback line: job taken, job blown, level shed. */
   toast: { text: string; color: string; alpha: number } | null;
   timeLeft: number;
@@ -46,6 +48,7 @@ export class Hud {
     this.drawPad(pads.driftX, pads.driftY, pads.radius, 'DRIFT', model.drifting);
     this.drawPad(pads.brakeX, pads.brakeY, pads.radius, 'BRAKE', false);
     this.drawSpeed(model);
+    this.drawMultiplier(model);
     if (model.showDebug) {
       ctx.fillStyle = model.fps < 50 ? '#ff8080' : 'rgba(255,255,255,0.55)';
       ctx.font = '12px ui-monospace, monospace';
@@ -116,7 +119,7 @@ export class Hud {
 
     ctx.fillStyle = '#5adca0';
     ctx.font = '500 13px ui-monospace, monospace';
-    ctx.fillText(`$${model.cash.toLocaleString('en-US')}`, cx, 44);
+    ctx.fillText(`$${Math.floor(model.cash).toLocaleString('en-US')}`, cx, 44);
   }
 
   /** In-world job pins, clamped to the screen edge when they are somewhere off it. */
@@ -270,6 +273,33 @@ export class Hud {
     ctx.letterSpacing = '2px';
     ctx.fillText('LYING LOW', cx, cy + radius + 10);
     ctx.letterSpacing = '0px';
+  }
+
+  /**
+   * The combo, shown only when there is one. It sits by the speed readout because both answer
+   * the same question — how well is this run going right now.
+   */
+  private drawMultiplier(model: HudModel): void {
+    if (model.multiplier < 1.05) return;
+    const ctx = this.r.ctx;
+    const heat = clamp((model.multiplier - 1) / 2, 0, 1);
+    const y = this.r.cssHeight - 66;
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = `rgb(${(230 + heat * 25) | 0},${(190 - heat * 60) | 0},${(90 - heat * 30) | 0})`;
+    ctx.font = '700 26px "Big Shoulders Display", Impact, ui-monospace, monospace';
+    ctx.fillText(`x${model.multiplier.toFixed(1)}`, this.r.cssWidth / 2, y);
+
+    const labels: Record<string, string> = { shave: 'CLOSE', drift: 'SLIDE', dodge: 'DODGED', break: '' };
+    const label = model.styleEvent ? labels[model.styleEvent] : '';
+    if (label) {
+      ctx.fillStyle = 'rgba(255,225,170,0.8)';
+      ctx.font = '600 10px ui-monospace, monospace';
+      ctx.letterSpacing = '2px';
+      ctx.fillText(label, this.r.cssWidth / 2, y - 26);
+      ctx.letterSpacing = '0px';
+    }
   }
 
   private drawToast(toast: NonNullable<HudModel['toast']>): void {

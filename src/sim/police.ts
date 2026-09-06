@@ -47,6 +47,8 @@ export interface Cop {
   stuckFor: number;
   /** Seconds left backing out of whatever it wedged itself against. */
   reverseFor: number;
+  /** Stops one near-miss counting repeatedly. */
+  shaveCooldown: number;
 }
 
 export interface Roadblock {
@@ -135,7 +137,7 @@ export class Police {
     }
 
     if (hunting && this.cops.length < doctrine.cars) {
-      this.spawn(player, doctrine, heat.seen);
+      this.spawn(player, heat, doctrine, focusX, focusY);
     }
 
     for (let i = this.cops.length - 1; i >= 0; i--) {
@@ -212,19 +214,27 @@ export class Police {
     driveToward(cop.car, cop.targetX, cop.targetY, cop.input, heat.seen ? 1 : 0.8);
   }
 
-  private spawn(player: Car, doctrine: Doctrine, seen: boolean): void {
+  private spawn(player: Car, heat: Heat, doctrine: Doctrine, focusX: number, focusY: number): void {
+    const seen = heat.seen;
     for (let attempt = 0; attempt < 14; attempt++) {
-      // Bias spawns ahead of the player when intercepting, behind when simply chasing, so a
-      // new car never materialises in the player's mirrors for no reason.
       // Units are dispatched to get in FRONT of the car, not to trail it: a patrol arriving in
       // your mirrors is scenery, one arriving at the junction ahead is a chase. When the player
       // is barely moving, fall back to where the car is pointing.
-      const bias = player.speed > 40 ? Math.atan2(player.vy, player.vx) : player.angle;
+      //
+      // Crucially, when the police have NOT got eyes on you they are dispatched around where
+      // they THINK you are — the swept search point — never around where you actually are.
+      // Spawning relative to the player while unseen hands the force psychic knowledge and
+      // makes hiding impossible: fresh cars simply keep materialising on top of you.
+      const bias = seen
+        ? player.speed > 40 ? Math.atan2(player.vy, player.vx) : player.angle
+        : Math.atan2(heat.lastHeadingY, heat.lastHeadingX);
       const spread = seen ? (doctrine.intercept ? 1.2 : 1.6) : 0.75;
+      const originX = seen ? player.x : focusX;
+      const originY = seen ? player.y : focusY;
       const a = bias + (this.rng.next() - 0.5) * 2 * spread;
       const r = this.rng.range(SPAWN_MIN, SPAWN_MAX);
-      const x = player.x + Math.cos(a) * r;
-      const y = player.y + Math.sin(a) * r;
+      const x = originX + Math.cos(a) * r;
+      const y = originY + Math.sin(a) * r;
       const tile = this.map.atWorld(x, y);
       if (tile !== Tile.Road && tile !== Tile.Alley) continue;
       if (this.grid.distanceAt(Math.floor(x / TILE), Math.floor(y / TILE)) < 0) continue;
@@ -245,6 +255,7 @@ export class Police {
         targetY: player.y,
         stuckFor: 0,
         reverseFor: 0,
+        shaveCooldown: 0,
       });
       return;
     }

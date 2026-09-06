@@ -41,6 +41,9 @@ export class Car {
   readonly events: CarEvents = { impact: 0, boosted: false };
 
   private driftHeldFor = 0;
+  private brakeWasDown = false;
+  /** Reverse is only available when the brake is pressed again from a standstill. */
+  private reverseArmed = false;
 
   constructor(public stats: VehicleStats) {}
 
@@ -82,12 +85,21 @@ export class Car {
       // Coasting: quadratic drag plus rolling resistance, so lifting off actually slows you.
       vLong -= (drag + vLong * 0.5) * dt;
     }
-    if (input.brake > 0) {
+    // The brake means stop, and holding it means stay stopped: with an auto-throttle there is
+    // otherwise no way to park at all, which quietly made hideouts impossible to use. Reverse
+    // is a second, deliberate press once you are already stationary.
+    const braking = input.brake > 0;
+    if (braking && !this.brakeWasDown) this.reverseArmed = Math.abs(vLong) < CRAWL * 0.2;
+    this.brakeWasDown = braking;
+
+    if (braking) {
       if (vLong > CRAWL * 0.2) {
         vLong = Math.max(0, vLong - s.brake * dt);
-      } else {
-        // Held brake at a standstill backs out of dead ends.
+      } else if (this.reverseArmed) {
         vLong = Math.max(-s.topSpeed * 0.35, vLong - s.accel * 0.7 * dt);
+      } else {
+        vLong = 0;
+        vLat = 0;
       }
     }
 

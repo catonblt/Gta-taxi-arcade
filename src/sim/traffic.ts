@@ -29,6 +29,8 @@ export interface TrafficCar {
   /** Set while this car is the target of an Intercept job: it runs instead of commuting. */
   fleeing: boolean;
   damage: number;
+  /** Stops one pass counting as a dozen close shaves. */
+  shaveCooldown: number;
 }
 
 const COLORS = ['#c8ccd4', '#7d8590', '#4a5560', '#a8a094', '#5f7d6a', '#8e6f5a'];
@@ -116,6 +118,7 @@ export class Traffic {
         wrecked: false,
         fleeing: false,
         damage: 0,
+        shaveCooldown: 0,
       };
       this.cars.push(car);
       return car;

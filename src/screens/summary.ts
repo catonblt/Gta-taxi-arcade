@@ -3,6 +3,8 @@ import type { ShiftSummary } from '../game/shift';
 const rows = (summary: ShiftSummary, careerCash: number): [string, string][] => {
   const list: [string, string][] = [
     ['Jobs run', `${summary.jobs} delivered${summary.blown > 0 ? `, ${summary.blown} blown` : ''}`],
+    ['Best combo', `x${summary.peakMultiplier.toFixed(1)}`],
+    ['Earned driving', `$${summary.tips.toLocaleString('en-US')} in tips`],
     ['Time on shift', `${Math.floor(summary.seconds / 60)}m ${Math.floor(summary.seconds % 60)}s`],
   ];
   if (summary.lost > 0) list.push(['Lost to the impound', `-$${summary.lost.toLocaleString('en-US')}`]);
