@@ -31,11 +31,19 @@ const page = await browser.newPage({ viewport: { width: 412, height: 892 }, devi
 
 const errors = [];
 page.on('pageerror', (e) => errors.push(String(e)));
-page.on('requestfailed', (r) => { if (!r.url().includes('favicon')) errors.push(`request failed: ${r.url()}`); });
-page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('favicon')) errors.push(m.text()); });
+// Google Fonts is unreachable from this container's proxy; the page falls back by design.
+const IGNORED = ['favicon', 'fonts.googleapis.com', 'fonts.gstatic.com'];
+page.on('requestfailed', (r) => { if (!IGNORED.some((i) => r.url().includes(i))) errors.push(`request failed: ${r.url()}`); });
+page.on('console', (m) => {
+  const text = m.text();
+  if (m.type() !== 'error') return;
+  if (IGNORED.some((i) => text.includes(i)) || text.includes('ERR_CONNECTION_RESET')) return;
+  errors.push(text);
+});
 
 await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'load' });
 await page.waitForFunction(() => window.__getaway !== undefined, null, { timeout: 5000 });
+await page.click('#start');
 
 const shot = async (name) => page.screenshot({ path: new URL(`../shots/${name}.png`, import.meta.url).pathname });
 
@@ -74,6 +82,34 @@ const clear = await page.evaluate(() => ({
   topSpeed: window.__getaway.car.stats.topSpeed,
 }));
 
+// --- Pursuit: put the player on rung 2 and confirm the police actually turn up, get eyes on,
+// and then lose them when the player is no longer there to be seen.
+await page.evaluate(() => {
+  const g = window.__getaway;
+  g.reset();
+  g.heat.setLevel(2);
+});
+await page.waitForTimeout(6000);
+await shot('pursuit');
+const chase = await page.evaluate(() => {
+  const g = window.__getaway;
+  return { cops: g.police.cops.length, pursuit: g.heat.pursuit, level: g.heat.level };
+});
+
+// Vanish: drop the player across the map so nobody can see them, and watch the chase decay.
+await page.evaluate(() => {
+  const g = window.__getaway;
+  // Across the district, on the far arterial: out of every sight line, still on a real road.
+  g.car.placeAt(g.map.spawn.x + 2400, g.map.spawn.y, 0);
+  g.camera.snapTo(g.car.x, g.car.y);
+});
+await page.waitForTimeout(3500);
+const lost = await page.evaluate(() => ({
+  pursuit: window.__getaway.heat.pursuit,
+  seen: window.__getaway.heat.seen,
+  level: window.__getaway.heat.level,
+}));
+
 // Streets back on: the perf window that matters is the busy one.
 await page.evaluate(() => {
   const g = window.__getaway;
@@ -103,12 +139,16 @@ const report = await page.evaluate(() => {
 await browser.close();
 server.close();
 
-console.log(JSON.stringify({ ...report, clearRunSpeed: clear.speed, topSpeed: clear.topSpeed }, null, 2));
+console.log(JSON.stringify({ ...report, clearRunSpeed: clear.speed, topSpeed: clear.topSpeed, chase, lost }, null, 2));
 if (errors.length) {
   console.error('PAGE ERRORS:\n' + errors.join('\n'));
   process.exit(1);
 }
 if (report.inSolid) { console.error('FAIL: car ended up inside a solid tile'); process.exit(1); }
+if (chase.cops < 2) { console.error(`FAIL: rung 2 only fielded ${chase.cops} cars`); process.exit(1); }
+if (chase.pursuit !== 'chase') { console.error(`FAIL: police never got eyes on (${chase.pursuit})`); process.exit(1); }
+if (lost.seen || lost.pursuit === 'chase') { console.error('FAIL: police kept eyes on a player who was not there'); process.exit(1); }
+if (lost.level !== 2) { console.error(`FAIL: heat decayed on its own to ${lost.level}`); process.exit(1); }
 // Headless Chromium does not pace rAF at a real 60Hz, so fps here is informational only.
 // The meaningful budget is our own per-frame cost: 16.6ms is the wall, 8ms leaves headroom
 // for a mid-range phone doing the same work on a slower core.

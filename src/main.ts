@@ -5,6 +5,8 @@ import { Rng } from './core/rng';
 import docksSource from './data/districts/docks.city?raw';
 import { VEHICLES } from './data/vehicles';
 import { Car } from './sim/car';
+import { Heat, HIDEOUT_SECONDS } from './sim/heat';
+import { Police } from './sim/police';
 import { TileMap } from './sim/tilemap';
 import { Traffic } from './sim/traffic';
 import { Camera } from './render/camera';
@@ -27,10 +29,20 @@ car.placeAt(map.spawn.x, map.spawn.y, 0);
 camera.snapTo(car.x, car.y);
 
 const traffic = new Traffic(map, rng, 20);
+const heat = new Heat();
+const police = new Police(map, rng);
+
+/** Seconds of the BUSTED card before the night restarts. */
+const BUST_HOLD = 2.4;
+let bustedFor = 0;
+let elapsed = 0;
 
 function reset(): void {
   car.placeAt(map.spawn.x, map.spawn.y, 0);
   car.damage = 0;
+  heat.reset();
+  police.clear();
+  bustedFor = 0;
   camera.snapTo(car.x, car.y);
 }
 
@@ -46,12 +58,40 @@ window.addEventListener('orientationchange', resize);
 let debug = new URLSearchParams(location.search).has('debug');
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') debug = !debug;
+  // Debug: jump straight to a rung to exercise a doctrine without earning it first.
+  const rung = Number(e.key);
+  if (debug && rung >= 0 && rung <= 5 && e.key.length === 1) heat.setLevel(rung);
 });
 
 function update(dt: number): void {
+  elapsed += dt;
+
+  if (bustedFor > 0) {
+    bustedFor -= dt;
+    if (bustedFor <= 0) reset();
+    return;
+  }
+
   input.update(dt);
   car.step(input.state, map, dt);
   traffic.step(car.x, car.y, dt);
+  heat.step(car, police.anyoneSees(car.x, car.y), map, dt);
+  police.step(car, heat, dt);
+
+  if (police.events.busted) {
+    bustedFor = BUST_HOLD;
+    return;
+  }
+  // Ramming a patrol car is its own kind of confession.
+  if (police.events.ram > 150) heat.add(0.22);
+
+  // A respray bay is a drive-through: roll in slowly and the plates change. In the shift
+  // economy this costs real money, which is what makes running for one a decision.
+  if (heat.canRespray(car, map)) {
+    heat.respray();
+    fx.smoke(car.x, car.y, 0, 0, 14);
+  }
+  if (police.events.roadblockHit > 120) fx.sparks(car.x, car.y, 12);
 
   // Traffic is soft-bodied against the player: a shunt shoves it aside and costs you speed,
   // rather than stopping the run dead. Hitting walls is the real punishment.
@@ -72,7 +112,11 @@ function update(dt: number): void {
       if (into > 0) {
         car.vx -= into * nx * 0.55;
         car.vy -= into * ny * 0.55;
-        if (into > 130) fx.sparks(car.x + nx * 16, car.y + ny * 16, 5);
+        if (into > 130) {
+        fx.sparks(car.x + nx * 16, car.y + ny * 16, 5);
+        // Driving through the traffic rather than around it is how a quiet night ends.
+        heat.add(0.3);
+      }
       }
     }
   }
@@ -100,6 +144,18 @@ function render(alpha: number): void {
   for (const t of traffic.cars) {
     renderer.drawCar(t.x, t.y, t.angle, t.length, t.width, t.color, { headlights: true });
   }
+  for (const block of police.roadblocks) {
+    for (const parked of block.cars) {
+      renderer.drawCar(parked.x, parked.y, parked.angle, parked.stats.length, parked.stats.width, '#1e2530', { roofLight: elapsed });
+    }
+  }
+  for (const cop of police.cops) {
+    const c = cop.car;
+    renderer.drawCar(
+      lerp(c.prevX, c.x, alpha), lerp(c.prevY, c.y, alpha), lerpAngle(c.prevAngle, c.angle, alpha),
+      c.stats.length, c.stats.width, '#20262f', { headlights: true, roofLight: elapsed },
+    );
+  }
   renderer.drawCar(x, y, angle, car.stats.length, car.stats.width, vehicle.color, { headlights: true });
   renderer.endWorld();
 
@@ -109,11 +165,23 @@ function render(alpha: number): void {
       topSpeed: car.stats.topSpeed,
       driftCharge: car.driftCharge,
       drifting: car.drifting,
+      heatLevel: heat.level,
+      seen: heat.seen,
+      pursuit: heat.pursuit,
+      hideoutProgress: heat.hideoutProgress / HIDEOUT_SECONDS,
+      canRespray: heat.canRespray(car, map),
+      pursuers: police.cops.map((cop) => ({
+        x: (cop.car.x - camera.x) * camera.scale + renderer.cssWidth / 2,
+        y: (cop.car.y - camera.y) * camera.scale + renderer.cssHeight / 2,
+      })),
+      time: elapsed,
       fps: loop.stats.fps,
       showDebug: debug,
     },
     input.layout(),
   );
+
+  if (bustedFor > 0) drawBusted();
 }
 
 const briefing = document.getElementById('briefing');
@@ -124,10 +192,25 @@ startButton?.addEventListener('click', () => {
   reset();
 });
 
+function drawBusted(): void {
+  const ctx = renderer.ctx;
+  ctx.setTransform(renderer.dpr, 0, 0, renderer.dpr, 0, 0);
+  ctx.fillStyle = 'rgba(11,13,16,0.82)';
+  ctx.fillRect(0, 0, renderer.cssWidth, renderer.cssHeight);
+  ctx.fillStyle = '#c8323c';
+  ctx.font = '900 54px "Big Shoulders Display", Impact, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('BUSTED', renderer.cssWidth / 2, renderer.cssHeight / 2 - 12);
+  ctx.fillStyle = 'rgba(230,234,238,0.7)';
+  ctx.font = '400 13px ui-monospace, monospace';
+  ctx.fillText('They boxed you in.', renderer.cssWidth / 2, renderer.cssHeight / 2 + 26);
+}
+
 const loop = new GameLoop(update, render);
 loop.start();
 
 window.addEventListener('keydown', (e) => { if (e.code === 'KeyR') reset(); });
 
 // Exposed so the headless harness can drive and inspect a real build.
-(window as unknown as Record<string, unknown>).__getaway = { car, map, input, loop, camera, traffic, reset, clamp };
+(window as unknown as Record<string, unknown>).__getaway = { car, map, input, loop, camera, traffic, heat, police, reset, clamp };

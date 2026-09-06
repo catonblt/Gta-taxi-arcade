@@ -83,3 +83,49 @@ export function resolveMapCollision(body: Body, map: TileMap): number {
 
   return -into;
 }
+
+interface PairBody {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  stats: { length: number; width: number; mass: number };
+}
+
+/**
+ * Car-on-car contact, resolved as a mass-weighted push apart plus an exchange of the closing
+ * velocity. Approximating each car by a circle keeps this cheap and, more importantly, keeps
+ * ramming predictable: heavier wins, and a glancing hit spins nobody out unfairly.
+ *
+ * Returns the closing speed of the impact, or 0 if the cars were not touching.
+ */
+export function resolveCarPair(a: PairBody, b: PairBody): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const dist = Math.hypot(dx, dy);
+  const minDist = (a.stats.length + b.stats.length) * 0.38;
+  if (dist < 1e-4 || dist >= minDist) return 0;
+
+  const nx = dx / dist;
+  const ny = dy / dist;
+  const overlap = minDist - dist;
+
+  const total = a.stats.mass + b.stats.mass;
+  const aShare = b.stats.mass / total;
+  const bShare = a.stats.mass / total;
+  a.x -= nx * overlap * aShare;
+  a.y -= ny * overlap * aShare;
+  b.x += nx * overlap * bShare;
+  b.y += ny * overlap * bShare;
+
+  const closing = (a.vx - b.vx) * nx + (a.vy - b.vy) * ny;
+  if (closing <= 0) return 0;
+
+  const impulse = closing * 1.4;
+  a.vx -= impulse * nx * aShare;
+  a.vy -= impulse * ny * aShare;
+  b.vx += impulse * nx * bShare;
+  b.vy += impulse * ny * bShare;
+
+  return closing;
+}

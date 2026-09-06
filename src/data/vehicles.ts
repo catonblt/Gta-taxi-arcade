@@ -72,6 +72,15 @@ export const VEHICLES: readonly Vehicle[] = [
   },
 ];
 
+/** Police vehicles, kept in the same shape as player cars so they share the physics exactly. */
+export const POLICE: Record<'cruiser' | 'interceptor', VehicleStats> = {
+  // Quicker than the Beater in a straight line and grippier through corners, on purpose: the
+  // starter car cannot outrun even the first rung, so escaping has to mean LOSING them —
+  // breaking line of sight and turning off your own escape line — not holding the throttle down.
+  cruiser: { accel: 255, topSpeed: 372, grip: 16, driftGrip: 2.9, steerRate: 2.8, brake: 350, mass: 1.15, armor: 45, length: 38, width: 19 },
+  interceptor: { accel: 305, topSpeed: 430, grip: 17, driftGrip: 2.6, steerRate: 3.0, brake: 390, mass: 1.3, armor: 60, length: 40, width: 19 },
+};
+
 export function vehicleById(id: string): Vehicle {
   return VEHICLES.find((v) => v.id === id) ?? VEHICLES[0];
 }
