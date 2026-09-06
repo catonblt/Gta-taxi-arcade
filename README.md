@@ -1,1 +1,41 @@
-# Gta-taxi-arcade
+# Getaway
+
+A top-down Android arcade game about driving for the wrong people: **Crazy Taxi's** fare loop,
+**Hill Climb Racing 2's** upgrade spine, and **GTA 1/2's** wanted-level ladder welded at one joint —
+*accepting a job is accepting heat.*
+
+Built web-first in TypeScript on a plain 2D canvas, so it runs in a phone browser today and wraps
+into a Play Store APK via Capacitor without a gameplay rewrite.
+
+## Running it
+
+```sh
+npm install
+npm run dev        # http://localhost:5173
+npm run build      # typecheck + production bundle into dist/
+npm test           # physics, collision and determinism specs
+npm run harness    # headless Chromium play-through: perf budget + regression screenshots
+npm run genmap     # regenerate a district's base street grid
+```
+
+## Controls
+
+The car drives itself. **Left half of the screen steers left, right half steers right.** Drift is
+the bottom-right thumb pad, brake/reverse the bottom-left. On desktop: arrow keys, space to drift,
+`R` to respawn, `F` for the frame counter.
+
+Three things are never explained in game and always available: a **launch tap** (flick the drift pad
+from a standstill), a **drift-cancel** (release drift at the apex for exit speed), and **contact
+steer** (a glancing wall hit redirects you instead of stopping you).
+
+## Layout
+
+| Path | What lives there |
+|---|---|
+| `src/core/` | Fixed-timestep loop, input abstraction, seeded RNG, math |
+| `src/sim/` | Car physics, tile collision, the map, ambient traffic |
+| `src/render/` | Camera, canvas renderer, particles, HUD |
+| `src/data/` | Vehicle stats and the authored district maps (`.city` text grids) |
+| `tools/` | Map generator and the headless play harness |
+
+Design decisions and the milestone plan live in the build plan that seeded this repo.
