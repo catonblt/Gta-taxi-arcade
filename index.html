@@ -6,22 +6,88 @@
 <meta name="theme-color" content="#0b0d10" />
 <meta name="mobile-web-app-capable" content="yes" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d10'/%3E%3Crect x='9' y='6' width='14' height='20' rx='3' fill='%23e0603a'/%3E%3Crect x='11' y='10' width='10' height='6' fill='%23121820'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;900&family=DM+Mono:wght@400;500&display=swap" />
 <title>Getaway</title>
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    /* A single committed visual world: sodium light on wet asphalt, seen from above. */
+    --ink: #0b0d10;
+    --asphalt: #3c424b;
+    --kerb: #96a0af;
+    --amber: #f0a63c;
+    --signal: #c8323c;
+    --paper: #e8eaee;
+    --display: "Big Shoulders Display", "Oswald", Impact, "Haettenschweiler", "Arial Narrow", sans-serif;
+    --mono: "DM Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
-    width: 100%; height: 100%; overflow: hidden; background: #0b0d10;
-    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--ink); color: var(--paper); font-family: var(--mono);
     -webkit-user-select: none; user-select: none;
     -webkit-tap-highlight-color: transparent;
     touch-action: none; overscroll-behavior: none;
   }
   #game { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  #briefing {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    padding: max(24px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
+    gap: 22px;
+    background: linear-gradient(to bottom, rgba(11,13,16,0.55) 0%, rgba(11,13,16,0.93) 55%, var(--ink) 100%);
+  }
+  #briefing[hidden] { display: none; }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--amber);
+  }
+  .wordmark {
+    font-family: var(--display); font-weight: 900; font-size: clamp(64px, 22vw, 132px);
+    line-height: 0.82; letter-spacing: -0.01em; text-wrap: balance;
+    color: var(--paper);
+  }
+  .tagline {
+    font-size: 13px; line-height: 1.55; color: #aeb6c2; max-width: 34ch;
+  }
+
+  .controls { display: grid; gap: 1px; background: rgba(150,160,175,0.18); border-top: 1px solid rgba(150,160,175,0.3); border-bottom: 1px solid rgba(150,160,175,0.3); }
+  .control { display: flex; align-items: baseline; gap: 12px; background: var(--ink); padding: 11px 2px; }
+  .control dt {
+    font-family: var(--mono); font-weight: 500; font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--amber); min-width: 8.5em; white-space: nowrap;
+  }
+  .control dd { font-size: 13px; color: #c3cad4; }
+
+  #start {
+    appearance: none; border: none; cursor: pointer; width: 100%;
+    background: var(--amber); color: #1a1206;
+    font-family: var(--display); font-weight: 700; font-size: 26px; letter-spacing: 0.06em;
+    text-transform: uppercase; padding: 14px 0 11px; border-radius: 2px;
+  }
+  #start:focus-visible { outline: 3px solid var(--paper); outline-offset: 3px; }
+  #start:active { background: #d8912e; }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="briefing">
+  <div>
+    <p class="eyebrow">The Docks &middot; Night shift</p>
+    <h1 class="wordmark">Getaway</h1>
+  </div>
+  <p class="tagline">You drive for people who cannot afford to be seen. Tonight is just the streets &mdash; learn them before the work starts.</p>
+  <dl class="controls">
+    <div class="control"><dt>Screen halves</dt><dd>Steer left, steer right. The car handles its own throttle.</dd></div>
+    <div class="control"><dt>Right pad</dt><dd>Drift.</dd></div>
+    <div class="control"><dt>Left pad</dt><dd>Brake, then reverse.</dd></div>
+  </dl>
+  <button id="start" type="button">Start driving</button>
+</div>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

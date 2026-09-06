@@ -28,6 +28,12 @@ camera.snapTo(car.x, car.y);
 
 const traffic = new Traffic(map, rng, 20);
 
+function reset(): void {
+  car.placeAt(map.spawn.x, map.spawn.y, 0);
+  car.damage = 0;
+  camera.snapTo(car.x, car.y);
+}
+
 function resize(): void {
   renderer.resize();
   camera.resize(renderer.cssWidth, renderer.cssHeight);
@@ -110,14 +116,16 @@ function render(alpha: number): void {
   );
 }
 
+const briefing = document.getElementById('briefing');
+const startButton = document.getElementById('start');
+startButton?.addEventListener('click', () => {
+  briefing?.setAttribute('hidden', '');
+  // Only start counting the world once the player's hands are on it.
+  reset();
+});
+
 const loop = new GameLoop(update, render);
 loop.start();
-
-function reset(): void {
-  car.placeAt(map.spawn.x, map.spawn.y, 0);
-  car.damage = 0;
-  camera.snapTo(car.x, car.y);
-}
 
 window.addEventListener('keydown', (e) => { if (e.code === 'KeyR') reset(); });
 
