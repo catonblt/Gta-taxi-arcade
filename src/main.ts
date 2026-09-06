@@ -5,9 +5,11 @@ import { lerpAngle, lerp, clamp } from './core/math';
 import { Rng } from './core/rng';
 import docksSource from './data/districts/docks.city?raw';
 import { VEHICLES } from './data/vehicles';
-import { Career } from './game/career';
+import { Garage } from './game/garage';
 import { JOB_KINDS, Jobs } from './game/jobs';
+import { loadGarage, saveGarage } from './game/save';
 import { Shift } from './game/shift';
+import { GarageScreen } from './screens/garage';
 import { MAX_MULTIPLIER, Style } from './game/style';
 import { hideSummary, showSummary } from './screens/summary';
 import { Car } from './sim/car';
@@ -31,18 +33,19 @@ const fx = new Fx();
 const rng = new Rng(20260906);
 
 const map = new TileMap(docksSource);
-const vehicle = VEHICLES[0];
-const car = new Car({ ...vehicle.base });
+const car = new Car({ ...VEHICLES[0].base });
 car.placeAt(map.spawn.x, map.spawn.y, 0);
 camera.snapTo(car.x, car.y);
 
 const traffic = new Traffic(map, rng, 20);
 const heat = new Heat();
 const police = new Police(map, rng);
-const career = new Career();
-const shift = new Shift(career);
+const garage = new Garage();
+loadGarage(garage);
+const shift = new Shift(garage);
 const jobs = new Jobs(map, rng, traffic);
 const style = new Style();
+const garageScreen = new GarageScreen(garage, () => startShift(), () => saveGarage(garage));
 const audio = new Audio();
 
 /** Band around a car that counts as threading it: closer than this and you have hit it. */
@@ -80,8 +83,24 @@ function reset(): void {
   camera.snapTo(car.x, car.y);
 }
 
+/**
+ * Pushes the garage build into the simulation. Every part is a rule change somewhere in here —
+ * nothing on the parts list is decoration.
+ */
+function applyBuild(): void {
+  const m = garage.modifiers();
+  buildMods = m;
+  car.stats = garage.stats();
+  car.driftBoostScale = m.driftBoost;
+  police.sightDelay = m.sightDelay;
+  jobs.fareScale = m.fareTime;
+  style.ceiling = m.maxMultiplier;
+}
+
 function startShift(): void {
   hideSummary();
+  garageScreen.hide();
+  applyBuild();
   reset();
   shift.start();
 }
@@ -90,7 +109,14 @@ function endShift(busted: boolean): void {
   shift.peakMultiplier = style.peak;
   if (busted) shift.busted(heat.level > 0, jobs.completed, jobs.blown);
   else shift.clockOut(jobs.completed, jobs.blown);
-  if (shift.summary) showSummary(shift.summary, career.cash);
+
+  // Rep is earned by variety and by driving well, never by grinding the same easy fare: it is
+  // what opens the better parts, and later the harder districts.
+  const earnedRep = jobs.completed * 2 + Math.round((style.peak - 1) * 2);
+  garage.rep += earnedRep;
+  saveGarage(garage);
+
+  if (shift.summary) showSummary(shift.summary, garage.cash, earnedRep);
 }
 
 function resize(): void {
@@ -127,7 +153,7 @@ function update(dt: number): void {
   input.update(dt);
   car.step(input.state, map, dt);
   traffic.step(car.x, car.y, dt);
-  heat.step(car, police.anyoneSees(car.x, car.y), map, dt);
+  heat.step(car, police.anyoneSees(car.x, car.y, dt), map, dt);
   police.step(car, heat, dt);
 
   if (police.events.busted) {
@@ -144,7 +170,7 @@ function update(dt: number): void {
   }
   if (jobs.events.completed) {
     // Style is money: arriving mid-combo is worth multiples of arriving cold.
-    const paid = Math.round(jobs.events.paid * style.multiplier);
+    const paid = Math.round(jobs.events.paid * style.multiplier * buildMods.payout);
     shift.bookJob(jobs.events.completed, paid);
     toast(`Paid $${paid.toLocaleString('en-US')}`, '#5adca0');
     audio.chime();
@@ -153,9 +179,9 @@ function update(dt: number): void {
   if (jobs.events.failed) toast(jobs.events.failed.failReason, '#d83a44');
   if (heat.events.cooled) toast('Lost a level', '#a882f0');
   // A wall hit is what ruins a courier run — the load, not the car, is what you are paid for.
-  if (car.events.impact > 90) jobs.damageCargo(car.events.impact);
+  if (car.events.impact > 90) jobs.damageCargo(car.events.impact * buildMods.cargoDamage);
   // Ramming a patrol car is its own kind of confession.
-  if (police.events.ram > 150) heat.add(0.22);
+  if (police.events.ram > 150) heat.add(0.22 * buildMods.heatGain);
 
   // A respray bay is a drive-through: roll in slowly and the plates change. In the shift
   // economy this costs real money, which is what makes running for one a decision.
@@ -186,13 +212,13 @@ function update(dt: number): void {
         car.vy -= into * ny * 0.55;
         if (into > 130) {
         fx.sparks(car.x + nx * 16, car.y + ny * 16, 5);
-        // Driving through the traffic rather than around it is how a quiet night ends.
-        heat.add(0.3);
-        jobs.damageCargo(into);
+          // Driving through the traffic rather than around it is how a quiet night ends.
+        heat.add(0.3 * buildMods.heatGain * buildMods.trafficHeat);
+        jobs.damageCargo(into * buildMods.cargoDamage);
         if (traffic.damage(t, into)) {
           jobs.countWreck();
           fx.sparks(t.x, t.y, 14);
-          heat.add(0.35);
+          heat.add(0.35 * buildMods.heatGain * buildMods.trafficHeat);
         }
       }
       }
@@ -240,7 +266,7 @@ function render(alpha: number): void {
       c.stats.length, c.stats.width, '#20262f', { headlights: true, roofLight: elapsed },
     );
   }
-  renderer.drawCar(x, y, angle, car.stats.length, car.stats.width, vehicle.color, { headlights: true });
+  renderer.drawCar(x, y, angle, car.stats.length, car.stats.width, garage.vehicle.color, { headlights: true });
   renderer.endWorld();
 
   hud.draw(
@@ -261,7 +287,9 @@ function render(alpha: number): void {
       timeLeft: shift.timeLeft,
       cash: shift.pending,
       job: buildJobBanner(),
-      pursuers: police.cops.map((cop) => ({
+      // Without a scanner you only see them once they have seen you: the badge and the arrows
+      // tell the same story, and buying the part is buying the story earlier.
+      pursuers: (heat.seen || buildMods.alwaysShowPursuers ? police.cops : []).map((cop) => ({
         x: (cop.car.x - camera.x) * camera.scale + renderer.cssWidth / 2,
         y: (cop.car.y - camera.y) * camera.scale + renderer.cssHeight / 2,
       })),
@@ -281,14 +309,22 @@ startButton?.addEventListener('click', () => {
   briefing?.setAttribute('hidden', '');
   // A real user gesture is the only moment a browser will let the audio context open.
   audio.start();
-  startShift();
+  // A returning player has something to spend; a new one has nothing to look at yet.
+  if (garage.cash > 0 || garage.rep > 0) garageScreen.show();
+  else startShift();
 });
-document.getElementById('again')?.addEventListener('click', startShift);
+document.getElementById('again')?.addEventListener('click', () => {
+  hideSummary();
+  garageScreen.show();
+});
 
 /**
  * The flourishes: threading traffic, holding a slide, and a pursuer committing to a ram and
  * getting nothing. Each pays immediately and lifts the multiplier; a real crash takes it away.
  */
+/** Rebuilt once per shift by applyBuild, read every frame by the rules below. */
+let buildMods = garage.modifiers();
+
 function stepStyle(dt: number): void {
   style.step(dt);
 
@@ -315,11 +351,14 @@ function stepStyle(dt: number): void {
     }
   }
 
-  const worstImpact = Math.max(car.events.impact, police.events.ram, police.events.roadblockHit);
+  const ram = police.events.ram * buildMods.ramTaken;
+  const worstImpact = Math.max(car.events.impact, ram, police.events.roadblockHit);
   if (worstImpact > 60) audio.thud(Math.min(1, worstImpact / 320));
-  if (style.impact(worstImpact)) toast('Combo lost', '#d83a44');
+  // A PIT bar means trading paint with a cruiser costs you nothing but the paint.
+  const comboImpact = buildMods.ramKeepsCombo ? Math.max(car.events.impact, police.events.roadblockHit) : worstImpact;
+  if (style.impact(comboImpact)) toast('Combo lost', '#d83a44');
 
-  if (style.events.tip > 0) shift.tip(style.events.tip);
+  if (style.events.tip > 0) shift.tip(style.events.tip * buildMods.payout);
 }
 
 function toScreen(wx: number, wy: number): { x: number; y: number } {
@@ -385,4 +424,4 @@ loop.start();
 window.addEventListener('keydown', (e) => { if (e.code === 'KeyR') reset(); });
 
 // Exposed so the headless harness can drive and inspect a real build.
-(window as unknown as Record<string, unknown>).__getaway = { car, map, input, loop, camera, traffic, heat, police, jobs, shift, career, style, audio, startShift, reset, clamp, MAX_MULTIPLIER };
+(window as unknown as Record<string, unknown>).__getaway = { car, map, input, loop, camera, traffic, heat, police, jobs, shift, garage, garageScreen, style, audio, startShift, reset, clamp, MAX_MULTIPLIER };

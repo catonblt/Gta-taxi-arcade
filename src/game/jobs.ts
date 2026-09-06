@@ -92,6 +92,8 @@ export class Jobs {
 
   completed = 0;
   blown = 0;
+  /** Scales every fare clock. Raised by a Getaway Kit. */
+  fareScale = 1;
 
   private nextId = 1;
 
@@ -160,8 +162,8 @@ export class Jobs {
       tier,
       state: 'offered',
       payout: Math.round(tier.payout * definition.payoutScale),
-      fareLeft: tier.fareSeconds,
-      fareTotal: tier.fareSeconds,
+      fareLeft: tier.fareSeconds * this.fareScale,
+      fareTotal: tier.fareSeconds * this.fareScale,
       pickupX: pickup.x,
       pickupY: pickup.y,
       dropX: drop.x,
@@ -220,8 +222,8 @@ export class Jobs {
     if (job.tier.heatOnAccept > 0) heat.setLevel(Math.max(heat.level, job.tier.heatOnAccept));
 
     if (job.kind === 'frenzy') {
-      job.fareLeft = FRENZY_SECONDS;
-      job.fareTotal = FRENZY_SECONDS;
+      job.fareLeft = FRENZY_SECONDS * this.fareScale;
+      job.fareTotal = job.fareLeft;
     }
     if (job.kind === 'intercept') {
       job.target = this.traffic.markTarget(job.pickupX, job.pickupY);

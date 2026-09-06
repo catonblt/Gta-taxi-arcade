@@ -28,6 +28,16 @@ export interface Vehicle {
   base: VehicleStats;
 }
 
+export const EXOTIC: Vehicle = {
+  id: 'exotic',
+  name: 'Kestrel',
+  blurb: 'Faster than anything they own, and made of glass.',
+  tier: 3,
+  price: 26000,
+  color: '#3ac6d8',
+  base: { accel: 395, topSpeed: 520, grip: 18, driftGrip: 2.4, steerRate: 3.0, brake: 430, mass: 0.95, armor: 30, length: 38, width: 18 },
+};
+
 /**
  * The starter is deliberately slow and loose: the brief is that the game must not start easy, and
  * the Beater is where that promise is kept. Later cars are personalities, not strict upgrades —
@@ -62,6 +72,15 @@ export const VEHICLES: readonly Vehicle[] = [
     base: { accel: 195, topSpeed: 345, grip: 13, driftGrip: 3.6, steerRate: 2.4, brake: 300, mass: 1.7, armor: 62, length: 44, width: 21 },
   },
   {
+    id: 'taxi',
+    name: 'Retired Cab',
+    blurb: 'Nobody looks twice at a taxi. Slow, roomy, invisible.',
+    tier: 1,
+    price: 6400,
+    color: '#d8b13a',
+    base: { accel: 235, topSpeed: 360, grip: 15.5, driftGrip: 2.8, steerRate: 2.6, brake: 340, mass: 1.2, armor: 38, length: 40, width: 19 },
+  },
+  {
     id: 'muscle',
     name: 'Warhorse',
     blurb: 'Straight lines and bad decisions. Bring grip upgrades.',
@@ -70,6 +89,7 @@ export const VEHICLES: readonly Vehicle[] = [
     color: '#b8323c',
     base: { accel: 330, topSpeed: 455, grip: 12, driftGrip: 2.2, steerRate: 2.7, brake: 380, mass: 1.35, armor: 44, length: 40, width: 19 },
   },
+  EXOTIC,
 ];
 
 /** Police vehicles, kept in the same shape as player cars so they share the physics exactly. */
@@ -80,6 +100,9 @@ export const POLICE: Record<'cruiser' | 'interceptor', VehicleStats> = {
   cruiser: { accel: 255, topSpeed: 372, grip: 16, driftGrip: 2.9, steerRate: 2.8, brake: 350, mass: 1.15, armor: 45, length: 38, width: 19 },
   interceptor: { accel: 305, topSpeed: 430, grip: 17, driftGrip: 2.6, steerRate: 3.0, brake: 390, mass: 1.3, armor: 60, length: 40, width: 19 },
 };
+
+/** How many parts a car of each tier can carry. Better cars are better platforms, too. */
+export const SLOTS_BY_TIER: readonly number[] = [2, 3, 3, 4];
 
 export function vehicleById(id: string): Vehicle {
   return VEHICLES.find((v) => v.id === id) ?? VEHICLES[0];

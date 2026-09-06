@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Career } from '../src/game/career';
+import { Garage } from '../src/game/garage';
 import { Shift, START_SECONDS } from '../src/game/shift';
 import { Jobs, TIERS } from '../src/game/jobs';
 import { Heat } from '../src/sim/heat';
@@ -30,7 +30,7 @@ function tick(jobs: Jobs, heat: Heat, at: { x: number; y: number }, seconds: num
 
 describe('shift clock', () => {
   it('runs down and reports when it is spent', () => {
-    const shift = new Shift(new Career());
+    const shift = new Shift(new Garage());
     shift.start();
     expect(shift.timeLeft).toBe(START_SECONDS);
     for (let i = 0; i < 60 * START_SECONDS + 60; i++) shift.step(FIXED_DT);
@@ -39,7 +39,7 @@ describe('shift clock', () => {
   });
 
   it('pays a delivery in cash and in clock, capped', () => {
-    const shift = new Shift(new Career());
+    const shift = new Shift(new Garage());
     shift.start();
     shift.step(30);
     const before = shift.timeLeft;
@@ -54,7 +54,7 @@ describe('shift clock', () => {
   });
 
   it('banks the night when you clock out on your own terms', () => {
-    const career = new Career();
+    const career = new Garage();
     const shift = new Shift(career);
     shift.start();
     shift.bookJob({ fareLeft: 5 } as Job, 900);
@@ -65,7 +65,7 @@ describe('shift clock', () => {
   });
 
   it('takes the whole unbanked pile when you are busted hot', () => {
-    const career = new Career();
+    const career = new Garage();
     const shift = new Shift(career);
     shift.start();
     shift.bookJob({ fareLeft: 5 } as Job, 1200);
@@ -76,7 +76,7 @@ describe('shift clock', () => {
   });
 
   it('leaves the garage alone: a bust never touches banked career cash', () => {
-    const career = new Career();
+    const career = new Garage();
     career.cash = 5000;
     const shift = new Shift(career);
     shift.start();

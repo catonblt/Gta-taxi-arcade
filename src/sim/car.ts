@@ -40,6 +40,9 @@ export class Car {
 
   readonly events: CarEvents = { impact: 0, boosted: false };
 
+  /** Scaled by fitted parts. 1 is the bare car. */
+  driftBoostScale = 1;
+
   private driftHeldFor = 0;
   private brakeWasDown = false;
   /** Reverse is only available when the brake is pressed again from a standstill. */
@@ -135,11 +138,11 @@ export class Car {
     if (input.driftReleased) {
       if (this.driftCharge > 0.35) {
         // Drift-cancel: release at the apex and the slide pays you back in exit speed.
-        vLong += 55 + this.driftCharge * 60;
+        vLong += (55 + this.driftCharge * 60) * this.driftBoostScale;
         this.events.boosted = true;
       } else if (Math.abs(vLong) < CRAWL && this.driftHeldFor < 0.25) {
         // Launch tap: a flick of the drift pad from a standstill. Never explained, always there.
-        vLong += 140;
+        vLong += 140 * this.driftBoostScale;
         this.events.boosted = true;
       }
       this.driftCharge = 0;

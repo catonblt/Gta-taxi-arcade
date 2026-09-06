@@ -87,6 +87,9 @@ export class Police {
   readonly events: PoliceEvents = { busted: false, ram: 0, roadblockHit: 0 };
 
   private readonly grid: PathGrid;
+  /** Seconds of unbroken sight the police need before they call it in. Raised by a jammer. */
+  sightDelay = 0;
+  private sightHeld = 0;
   private gridAge = 0;
   private boxedFor = 0;
   private roadblockCooldown = 0;
@@ -101,19 +104,26 @@ export class Police {
   clear(): void {
     this.cops.length = 0;
     this.roadblocks.length = 0;
+    this.sightHeld = 0;
     this.boxedFor = 0;
     this.roadblockCooldown = 0;
   }
 
   /** True if any pursuer currently has eyes on the player. Drives the whole seen/unseen split. */
-  anyoneSees(px: number, py: number): boolean {
+  anyoneSees(px: number, py: number, dt = 0): boolean {
+    let inSight = false;
     for (const cop of this.cops) {
       const d = Math.hypot(cop.car.x - px, cop.car.y - py);
       if (d > VISION_RANGE) continue;
-      if (d < POINT_BLANK) return true;
-      if (this.map.hasLineOfSight(cop.car.x, cop.car.y, px, py)) return true;
+      if (d < POINT_BLANK || this.map.hasLineOfSight(cop.car.x, cop.car.y, px, py)) {
+        inSight = true;
+        break;
+      }
     }
-    return false;
+    // A jammer does not make you invisible, it buys you the moment before the call goes out —
+    // so a glimpse down a side street costs nothing but sitting in the open still gives you up.
+    this.sightHeld = inSight ? this.sightHeld + dt : 0;
+    return inSight && this.sightHeld >= this.sightDelay;
   }
 
   step(player: Car, heat: Heat, dt: number): void {

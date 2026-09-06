@@ -1,6 +1,6 @@
 import type { ShiftSummary } from '../game/shift';
 
-const rows = (summary: ShiftSummary, careerCash: number): [string, string][] => {
+const rows = (summary: ShiftSummary, careerCash: number, rep: number): [string, string][] => {
   const list: [string, string][] = [
     ['Jobs run', `${summary.jobs} delivered${summary.blown > 0 ? `, ${summary.blown} blown` : ''}`],
     ['Best combo', `x${summary.peakMultiplier.toFixed(1)}`],
@@ -8,7 +8,8 @@ const rows = (summary: ShiftSummary, careerCash: number): [string, string][] => 
     ['Time on shift', `${Math.floor(summary.seconds / 60)}m ${Math.floor(summary.seconds % 60)}s`],
   ];
   if (summary.lost > 0) list.push(['Lost to the impound', `-$${summary.lost.toLocaleString('en-US')}`]);
-  list.push(['Banked', `$${careerCash.toLocaleString('en-US')} all in`]);
+  list.push(['Reputation', `+${rep} rep`]);
+  list.push(['In the garage', `$${careerCash.toLocaleString('en-US')}`]);
   return list;
 };
 
@@ -16,7 +17,7 @@ const rows = (summary: ShiftSummary, careerCash: number): [string, string][] => 
  * The shift boundary is where progression is felt, so this screen answers one question first —
  * what did tonight actually earn you — and only then explains itself.
  */
-export function showSummary(summary: ShiftSummary, careerCash: number): void {
+export function showSummary(summary: ShiftSummary, careerCash: number, rep: number): void {
   const panel = document.getElementById('summary');
   const reason = document.getElementById('sum-reason');
   const cash = document.getElementById('sum-cash');
@@ -30,7 +31,7 @@ export function showSummary(summary: ShiftSummary, careerCash: number): void {
   detail.textContent = summary.detail;
 
   list.replaceChildren();
-  for (const [label, value] of rows(summary, careerCash)) {
+  for (const [label, value] of rows(summary, careerCash, rep)) {
     const row = document.createElement('div');
     row.className = 'control';
     const dt = document.createElement('dt');

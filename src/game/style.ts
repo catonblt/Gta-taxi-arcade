@@ -1,6 +1,6 @@
 import { clamp } from '../core/math';
 
-/** The multiplier never runs away: three times is the ceiling on a perfect run. */
+/** The default ceiling on a perfect run. A Showboat Package raises it. */
 export const MAX_MULTIPLIER = 3;
 /** Seconds of clean, dull driving before the combo starts to bleed away. */
 const GRACE = 2.4;
@@ -31,6 +31,8 @@ export class Style {
   multiplier = 1;
   /** Best multiplier reached this shift, for the summary. */
   peak = 1;
+  /** Raised by parts. */
+  ceiling = MAX_MULTIPLIER;
   readonly events: StyleEvents = { tip: 0, last: null };
 
   private sinceEvent = 0;
@@ -78,7 +80,7 @@ export class Style {
     this.events.tip += tip * this.multiplier;
     this.events.last = event;
     this.sinceEvent = 0;
-    this.multiplier = clamp(this.multiplier + gain, 1, MAX_MULTIPLIER);
+    this.multiplier = clamp(this.multiplier + gain, 1, this.ceiling);
     if (this.multiplier > this.peak) this.peak = this.multiplier;
   }
 }

@@ -1,5 +1,9 @@
-import type { Career } from './career';
 import type { Job } from './jobs';
+
+/** The only thing a shift needs from the garage: somewhere to put the night's takings. */
+export interface Bank {
+  bank(amount: number): void;
+}
 
 export type ShiftState = 'briefing' | 'running' | 'over';
 
@@ -38,7 +42,7 @@ export class Shift {
   elapsed = 0;
   summary: ShiftSummary | null = null;
 
-  constructor(private readonly career: Career) {}
+  constructor(private readonly career: Bank) {}
 
   start(): void {
     this.state = 'running';
@@ -92,7 +96,6 @@ export class Shift {
     // should ever be shown $113.40000000000002.
     const banked = Math.round(Math.max(0, this.pending - lost));
     this.career.bank(banked);
-    this.career.jobsCompleted += jobs;
     this.summary = {
       reason,
       detail,
