@@ -4,6 +4,10 @@ import { lerpAngle, lerp, clamp } from './core/math';
 import { Rng } from './core/rng';
 import docksSource from './data/districts/docks.city?raw';
 import { VEHICLES } from './data/vehicles';
+import { Career } from './game/career';
+import { JOB_KINDS, Jobs } from './game/jobs';
+import { Shift } from './game/shift';
+import { hideSummary, showSummary } from './screens/summary';
 import { Car } from './sim/car';
 import { Heat, HIDEOUT_SECONDS } from './sim/heat';
 import { Police } from './sim/police';
@@ -11,8 +15,10 @@ import { TileMap } from './sim/tilemap';
 import { Traffic } from './sim/traffic';
 import { Camera } from './render/camera';
 import { Fx } from './render/fx';
-import { Hud } from './render/hud';
+import { Hud, type HudModel } from './render/hud';
 import { Renderer } from './render/renderer';
+
+type HudMarker = HudModel['markers'][number];
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const renderer = new Renderer(canvas);
@@ -31,19 +37,48 @@ camera.snapTo(car.x, car.y);
 const traffic = new Traffic(map, rng, 20);
 const heat = new Heat();
 const police = new Police(map, rng);
+const career = new Career();
+const shift = new Shift(career);
+const jobs = new Jobs(map, rng, traffic);
 
-/** Seconds of the BUSTED card before the night restarts. */
-const BUST_HOLD = 2.4;
+/** Seconds of the BUSTED card before the summary appears. */
+const BUST_HOLD = 1.8;
 let bustedFor = 0;
 let elapsed = 0;
+
+/** Transient one-liners: what just happened, gone in a couple of seconds. */
+const TOAST_SECONDS = 2;
+let toastText = '';
+let toastColor = '#e8eaee';
+let toastLeft = 0;
+
+function toast(text: string, color: string): void {
+  toastText = text;
+  toastColor = color;
+  toastLeft = TOAST_SECONDS;
+}
 
 function reset(): void {
   car.placeAt(map.spawn.x, map.spawn.y, 0);
   car.damage = 0;
   heat.reset();
   police.clear();
+  jobs.reset();
+  traffic.clear();
   bustedFor = 0;
   camera.snapTo(car.x, car.y);
+}
+
+function startShift(): void {
+  hideSummary();
+  reset();
+  shift.start();
+}
+
+function endShift(busted: boolean): void {
+  if (busted) shift.busted(heat.level > 0, jobs.completed, jobs.blown);
+  else shift.clockOut(jobs.completed, jobs.blown);
+  if (shift.summary) showSummary(shift.summary, career.cash);
 }
 
 function resize(): void {
@@ -68,9 +103,13 @@ function update(dt: number): void {
 
   if (bustedFor > 0) {
     bustedFor -= dt;
-    if (bustedFor <= 0) reset();
+    if (bustedFor <= 0) endShift(true);
     return;
   }
+  if (shift.state !== 'running') return;
+
+  shift.step(dt);
+  if (shift.expired) { endShift(false); return; }
 
   input.update(dt);
   car.step(input.state, map, dt);
@@ -82,6 +121,21 @@ function update(dt: number): void {
     bustedFor = BUST_HOLD;
     return;
   }
+
+  jobs.step(car, heat, dt);
+  toastLeft = Math.max(0, toastLeft - dt);
+  if (jobs.events.accepted) {
+    toast(`${JOB_KINDS[jobs.events.accepted.kind].label} taken`, jobs.events.accepted.tier.color);
+  }
+  if (jobs.events.completed) {
+    shift.bookJob(jobs.events.completed, jobs.events.paid);
+    toast(`Paid $${jobs.events.paid.toLocaleString('en-US')}`, '#5adca0');
+    fx.sparks(car.x, car.y, 16);
+  }
+  if (jobs.events.failed) toast(jobs.events.failed.failReason, '#d83a44');
+  if (heat.events.cooled) toast('Lost a level', '#a882f0');
+  // A wall hit is what ruins a courier run — the load, not the car, is what you are paid for.
+  if (car.events.impact > 90) jobs.damageCargo(car.events.impact);
   // Ramming a patrol car is its own kind of confession.
   if (police.events.ram > 150) heat.add(0.22);
 
@@ -116,6 +170,12 @@ function update(dt: number): void {
         fx.sparks(car.x + nx * 16, car.y + ny * 16, 5);
         // Driving through the traffic rather than around it is how a quiet night ends.
         heat.add(0.3);
+        jobs.damageCargo(into);
+        if (traffic.damage(t, into)) {
+          jobs.countWreck();
+          fx.sparks(t.x, t.y, 14);
+          heat.add(0.35);
+        }
       }
       }
     }
@@ -142,7 +202,12 @@ function render(alpha: number): void {
   renderer.drawMap(map, camera);
   fx.draw(renderer.ctx);
   for (const t of traffic.cars) {
-    renderer.drawCar(t.x, t.y, t.angle, t.length, t.width, t.color, { headlights: true });
+    const marked = jobs.active?.target === t;
+    renderer.drawCar(
+      t.x, t.y, t.angle, t.length, t.width,
+      t.wrecked ? '#3a3a3a' : marked ? '#e8d44a' : t.color,
+      { headlights: !t.wrecked },
+    );
   }
   for (const block of police.roadblocks) {
     for (const parked of block.cars) {
@@ -170,6 +235,11 @@ function render(alpha: number): void {
       pursuit: heat.pursuit,
       hideoutProgress: heat.hideoutProgress / HIDEOUT_SECONDS,
       canRespray: heat.canRespray(car, map),
+      markers: buildMarkers(),
+      toast: toastLeft > 0 ? { text: toastText, color: toastColor, alpha: Math.min(1, toastLeft / 0.5) } : null,
+      timeLeft: shift.timeLeft,
+      cash: shift.pending,
+      job: buildJobBanner(),
       pursuers: police.cops.map((cop) => ({
         x: (cop.car.x - camera.x) * camera.scale + renderer.cssWidth / 2,
         y: (cop.car.y - camera.y) * camera.scale + renderer.cssHeight / 2,
@@ -188,9 +258,52 @@ const briefing = document.getElementById('briefing');
 const startButton = document.getElementById('start');
 startButton?.addEventListener('click', () => {
   briefing?.setAttribute('hidden', '');
-  // Only start counting the world once the player's hands are on it.
-  reset();
+  // Only start the clock once the player's hands are on it.
+  startShift();
 });
+document.getElementById('again')?.addEventListener('click', startShift);
+
+function toScreen(wx: number, wy: number): { x: number; y: number } {
+  return {
+    x: (wx - camera.x) * camera.scale + renderer.cssWidth / 2,
+    y: (wy - camera.y) * camera.scale + renderer.cssHeight / 2,
+  };
+}
+
+function buildMarkers(): HudMarker[] {
+  const markers: HudMarker[] = [];
+  const objective = jobs.objective();
+  if (objective) {
+    const p = toScreen(objective.x, objective.y);
+    markers.push({ ...p, color: jobs.active?.tier.color ?? '#5adca0', label: objective.label, objective: true });
+  }
+  for (const offer of jobs.offers) {
+    const p = toScreen(offer.pickupX, offer.pickupY);
+    markers.push({ ...p, color: offer.tier.color, label: `$${offer.payout}`, objective: false });
+  }
+  return markers;
+}
+
+function buildJobBanner(): HudModel['job'] {
+  const job = jobs.active;
+  if (!job) return null;
+  const definition = JOB_KINDS[job.kind];
+  const progress =
+    job.kind === 'frenzy'
+      ? `${job.wrecksDone} of ${job.wrecksNeeded} wrecked`
+      : job.kind === 'courier'
+        ? `Load ${Math.round(job.cargo * 100)}%`
+        : definition.brief;
+  return {
+    label: definition.label,
+    brief: definition.brief,
+    payout: job.payout,
+    fareLeft: job.fareLeft,
+    fareTotal: job.fareTotal,
+    color: job.tier.color,
+    progress,
+  };
+}
 
 function drawBusted(): void {
   const ctx = renderer.ctx;
@@ -213,4 +326,4 @@ loop.start();
 window.addEventListener('keydown', (e) => { if (e.code === 'KeyR') reset(); });
 
 // Exposed so the headless harness can drive and inspect a real build.
-(window as unknown as Record<string, unknown>).__getaway = { car, map, input, loop, camera, traffic, heat, police, reset, clamp };
+(window as unknown as Record<string, unknown>).__getaway = { car, map, input, loop, camera, traffic, heat, police, jobs, shift, career, startShift, reset, clamp };

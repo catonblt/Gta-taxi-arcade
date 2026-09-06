@@ -15,6 +15,13 @@ export interface HudModel {
   canRespray: boolean;
   /** Screen-space positions of every active pursuer, for the off-screen arrows. */
   pursuers: readonly { x: number; y: number }[];
+  /** Screen-space job markers: offers and the current objective. */
+  markers: readonly { x: number; y: number; color: string; label: string; objective: boolean }[];
+  /** Transient feedback line: job taken, job blown, level shed. */
+  toast: { text: string; color: string; alpha: number } | null;
+  timeLeft: number;
+  cash: number;
+  job: { label: string; brief: string; payout: number; fareLeft: number; fareTotal: number; color: string; progress: string } | null;
   time: number;
   fps: number;
   showDebug: boolean;
@@ -28,8 +35,12 @@ export class Hud {
   draw(model: HudModel, pads: PadLayout): void {
     const ctx = this.r.ctx;
     ctx.setTransform(this.r.dpr, 0, 0, this.r.dpr, 0, 0);
+    this.drawClock(model);
     this.drawHeat(model);
+    this.drawMarkers(model);
     this.drawPursuerArrows(model);
+    if (model.job) this.drawJobBanner(model.job);
+    if (model.toast) this.drawToast(model.toast);
     if (model.hideoutProgress > 0.01) this.drawHold(model.hideoutProgress);
     if (model.canRespray) this.drawPrompt('RESPRAY — PULL IN', '#5adca0');
     this.drawPad(pads.driftX, pads.driftY, pads.radius, 'DRIFT', model.drifting);
@@ -52,7 +63,7 @@ export class Hud {
     if (model.heatLevel === 0 && model.pursuit === 'clear') return;
     const ctx = this.r.ctx;
     const x = 16;
-    const y = 22;
+    const y = 62;
     const size = 13;
     const gap = 7;
 
@@ -86,6 +97,105 @@ export class Hud {
     ctx.letterSpacing = '2px';
     ctx.fillText(label, x, y + size + 7);
     ctx.letterSpacing = '0px';
+  }
+
+  /** The shift clock and the pile you have not banked yet. */
+  private drawClock(model: HudModel): void {
+    const ctx = this.r.ctx;
+    const cx = this.r.cssWidth / 2;
+    const urgent = model.timeLeft <= 15;
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = urgent ? '#d83a44' : 'rgba(232,234,238,0.92)';
+    ctx.font = '700 30px "Big Shoulders Display", Impact, ui-monospace, monospace';
+    const seconds = Math.max(0, model.timeLeft);
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    ctx.fillText(`${mins}:${secs.toString().padStart(2, '0')}`, cx, 12);
+
+    ctx.fillStyle = '#5adca0';
+    ctx.font = '500 13px ui-monospace, monospace';
+    ctx.fillText(`$${model.cash.toLocaleString('en-US')}`, cx, 44);
+  }
+
+  /** In-world job pins, clamped to the screen edge when they are somewhere off it. */
+  private drawMarkers(model: HudModel): void {
+    const ctx = this.r.ctx;
+    const cx = this.r.cssWidth / 2;
+    const cy = this.r.cssHeight / 2;
+    const inset = 40;
+
+    for (const m of model.markers) {
+      const onScreen =
+        m.x > inset && m.x < this.r.cssWidth - inset && m.y > inset && m.y < this.r.cssHeight - inset;
+
+      let x = m.x;
+      let y = m.y;
+      if (!onScreen) {
+        const dx = m.x - cx;
+        const dy = m.y - cy;
+        const scale = Math.min(
+          (cx - inset) / Math.max(Math.abs(dx), 1e-3),
+          (cy - inset) / Math.max(Math.abs(dy), 1e-3),
+        );
+        x = cx + dx * scale;
+        y = cy + dy * scale;
+      }
+
+      ctx.beginPath();
+      ctx.arc(x, y, m.objective ? 13 : 10, 0, Math.PI * 2);
+      ctx.strokeStyle = m.color;
+      ctx.lineWidth = m.objective ? 3 : 2;
+      ctx.stroke();
+      ctx.fillStyle = `${m.color}22`;
+      ctx.fill();
+
+      ctx.fillStyle = m.color;
+      ctx.font = '600 9px ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.letterSpacing = '1px';
+      ctx.fillText(m.label, x, y + 16);
+      ctx.letterSpacing = '0px';
+    }
+  }
+
+  /** The job in hand: what it is, what it pays, and how long the client will wait. */
+  private drawJobBanner(job: NonNullable<HudModel['job']>): void {
+    const ctx = this.r.ctx;
+    const w = Math.min(this.r.cssWidth - 32, 340);
+    const x = (this.r.cssWidth - w) / 2;
+    const y = 68;
+
+    ctx.fillStyle = 'rgba(11,13,16,0.72)';
+    ctx.fillRect(x, y, w, 44);
+    ctx.fillStyle = job.color;
+    ctx.fillRect(x, y, 3, 44);
+
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = job.color;
+    ctx.font = '600 11px ui-monospace, monospace';
+    ctx.letterSpacing = '1.5px';
+    ctx.fillText(job.label.toUpperCase(), x + 12, y + 8);
+    ctx.letterSpacing = '0px';
+
+    ctx.fillStyle = 'rgba(210,216,224,0.75)';
+    ctx.font = '400 11px ui-monospace, monospace';
+    ctx.fillText(job.progress, x + 12, y + 25);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#5adca0';
+    ctx.font = '600 15px ui-monospace, monospace';
+    ctx.fillText(`$${job.payout.toLocaleString('en-US')}`, x + w - 12, y + 10);
+
+    // The fare's own clock. Empty it and the client walks — no payout, no time back.
+    const t = clamp(job.fareLeft / job.fareTotal, 0, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(x, y + 41, w, 3);
+    ctx.fillStyle = t < 0.25 ? '#d83a44' : job.color;
+    ctx.fillRect(x, y + 41, w * t, 3);
   }
 
   /**
@@ -162,6 +272,19 @@ export class Hud {
     ctx.letterSpacing = '0px';
   }
 
+  private drawToast(toast: NonNullable<HudModel['toast']>): void {
+    const ctx = this.r.ctx;
+    ctx.globalAlpha = toast.alpha;
+    ctx.fillStyle = toast.color;
+    ctx.font = '700 22px "Big Shoulders Display", Impact, ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.letterSpacing = '1px';
+    ctx.fillText(toast.text.toUpperCase(), this.r.cssWidth / 2, this.r.cssHeight * 0.42);
+    ctx.letterSpacing = '0px';
+    ctx.globalAlpha = 1;
+  }
+
   private drawPrompt(text: string, color: string): void {
     const ctx = this.r.ctx;
     ctx.fillStyle = color;
@@ -190,12 +313,16 @@ export class Hud {
     ctx.fillText(label, x, y);
   }
 
+  /**
+   * Speed lives at the bottom, between the thumbs. The top of the screen belongs to the clock,
+   * the wanted badge and the job in hand — three things that all want the eye at once.
+   */
   private drawSpeed(model: HudModel): void {
     const ctx = this.r.ctx;
     const w = this.r.cssWidth;
-    const barW = Math.min(190, w * 0.42);
-    const x = w - barW - 16;
-    const y = 24;
+    const barW = Math.min(190, w * 0.46);
+    const x = (w - barW) / 2;
+    const y = this.r.cssHeight - 40;
 
     ctx.fillStyle = 'rgba(255,255,255,0.10)';
     ctx.fillRect(x, y, barW, 6);
@@ -211,8 +338,8 @@ export class Hud {
 
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     ctx.font = '600 13px ui-monospace, monospace';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`${(model.speed * 0.26) | 0} MPH`, x + barW, y + 18);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`${(model.speed * 0.26) | 0} MPH`, w / 2, y - 6);
   }
 }

@@ -33,14 +33,14 @@
   }
   #game { display: block; width: 100%; height: 100%; touch-action: none; }
 
-  #briefing {
+  #briefing, #summary {
     position: fixed; inset: 0; z-index: 10;
     display: flex; flex-direction: column; justify-content: flex-end;
     padding: max(24px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
     gap: 22px;
     background: linear-gradient(to bottom, rgba(11,13,16,0.55) 0%, rgba(11,13,16,0.93) 55%, var(--ink) 100%);
   }
-  #briefing[hidden] { display: none; }
+  #briefing[hidden], #summary[hidden] { display: none; }
 
   .eyebrow {
     font-family: var(--mono); font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
@@ -63,14 +63,16 @@
   }
   .control dd { font-size: 13px; color: #c3cad4; }
 
-  #start {
+  #start, #again {
     appearance: none; border: none; cursor: pointer; width: 100%;
     background: var(--amber); color: #1a1206;
     font-family: var(--display); font-weight: 700; font-size: 26px; letter-spacing: 0.06em;
     text-transform: uppercase; padding: 14px 0 11px; border-radius: 2px;
   }
-  #start:focus-visible { outline: 3px solid var(--paper); outline-offset: 3px; }
-  #start:active { background: #d8912e; }
+  #start:focus-visible, #again:focus-visible { outline: 3px solid var(--paper); outline-offset: 3px; }
+  #start:active, #again:active { background: #d8912e; }
+  .wordmark.money { font-family: var(--mono); font-weight: 500; font-size: clamp(40px, 13vw, 76px); letter-spacing: -0.02em; color: var(--amber); }
+  .wordmark.busted { color: var(--signal); }
 </style>
 </head>
 <body>
@@ -80,7 +82,8 @@
     <p class="eyebrow">The Docks &middot; Night shift</p>
     <h1 class="wordmark">Getaway</h1>
   </div>
-  <p class="tagline">You drive for people who cannot afford to be seen. No work tonight &mdash; just the streets, and whoever comes looking once you make a mess of them.</p>
+  <p class="tagline">You drive for people who cannot afford to be seen. Take a pin, make the drop, and the fare puts time back on the clock. Nothing else does.</p>
+  <p class="tagline">Colour is the deal. Green is quiet money. Red pays properly and has the police looking for you before you have pulled away.</p>
   <dl class="controls">
     <div class="control"><dt>Screen halves</dt><dd>Steer left, steer right. The car handles its own throttle.</dd></div>
     <div class="control"><dt>Right pad</dt><dd>Drift.</dd></div>
@@ -89,6 +92,15 @@
     <div class="control"><dt>Purple bay</dt><dd>Somewhere to lie low, if nobody is watching.</dd></div>
   </dl>
   <button id="start" type="button">Start driving</button>
+</div>
+<div id="summary" hidden>
+  <div>
+    <p class="eyebrow" id="sum-reason">Clocked out</p>
+    <h1 class="wordmark money" id="sum-cash">$0</h1>
+  </div>
+  <p class="tagline" id="sum-detail"></p>
+  <dl class="controls" id="sum-rows"></dl>
+  <button id="again" type="button">Next shift</button>
 </div>
 <script type="module" src="/src/main.ts"></script>
 </body>

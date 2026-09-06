@@ -110,6 +110,55 @@ const lost = await page.evaluate(() => ({
   level: window.__getaway.heat.level,
 }));
 
+// --- A full shift, driven by the clock: take a job, deliver it, and check the money and the
+// time both land. Teleporting between pins is not a play-through, but it does prove the loop
+// closes: offer -> accept -> deliver -> paid -> clock extended -> summary.
+await page.evaluate(() => window.__getaway.startShift());
+await page.waitForTimeout(500);
+const loop = await page.evaluate(async () => {
+  const g = window.__getaway;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const offered = g.jobs.offers.length;
+  // Prefer a delivery job so the pickup -> drop -> paid -> clock path is the one exercised.
+  const deliverable = ['courier', 'getaway', 'ghost'];
+  const offer = g.jobs.offers.find((o) => deliverable.includes(o.kind)) ?? g.jobs.offers[0];
+  g.car.placeAt(offer.pickupX, offer.pickupY, 0);
+  await wait(200);
+  const took = g.jobs.active?.kind ?? null;
+
+  const clockBefore = g.shift.timeLeft;
+  const job = g.jobs.active;
+  let paid = 0;
+  if (job && job.kind !== 'frenzy' && job.kind !== 'intercept') {
+    g.car.placeAt(job.dropX, job.dropY, 0);
+    await wait(200);
+    paid = g.shift.pending;
+  }
+  return {
+    offered, took, paid, clockBefore, clockAfter: g.shift.timeLeft, jobs: g.jobs.completed,
+    blown: g.jobs.blown,
+    stillActive: g.jobs.active?.kind ?? null,
+    heat: g.heat.level,
+    drop: job ? [Math.round(job.dropX), Math.round(job.dropY)] : null,
+    carAt: [Math.round(g.car.x), Math.round(g.car.y)],
+  };
+});
+
+// Run the clock out and confirm the shift closes itself and banks what was earned.
+await page.evaluate(() => { window.__getaway.shift.timeLeft = 0.05; });
+await page.waitForTimeout(700);
+await shot('summary');
+const ended = await page.evaluate(() => ({
+  state: window.__getaway.shift.state,
+  banked: window.__getaway.shift.summary?.banked ?? -1,
+  career: window.__getaway.career.cash,
+  summaryVisible: !document.getElementById('summary').hasAttribute('hidden'),
+}));
+
+await page.click('#again');
+await page.waitForTimeout(300);
+
 // Streets back on: the perf window that matters is the busy one.
 await page.evaluate(() => {
   const g = window.__getaway;
@@ -139,7 +188,7 @@ const report = await page.evaluate(() => {
 await browser.close();
 server.close();
 
-console.log(JSON.stringify({ ...report, clearRunSpeed: clear.speed, topSpeed: clear.topSpeed, chase, lost }, null, 2));
+console.log(JSON.stringify({ ...report, clearRunSpeed: clear.speed, topSpeed: clear.topSpeed, chase, lost, loop, ended }, null, 2));
 if (errors.length) {
   console.error('PAGE ERRORS:\n' + errors.join('\n'));
   process.exit(1);
@@ -149,6 +198,15 @@ if (chase.cops < 2) { console.error(`FAIL: rung 2 only fielded ${chase.cops} car
 if (chase.pursuit !== 'chase') { console.error(`FAIL: police never got eyes on (${chase.pursuit})`); process.exit(1); }
 if (lost.seen || lost.pursuit === 'chase') { console.error('FAIL: police kept eyes on a player who was not there'); process.exit(1); }
 if (lost.level !== 2) { console.error(`FAIL: heat decayed on its own to ${lost.level}`); process.exit(1); }
+if (loop.offered === 0) { console.error('FAIL: no work was offered'); process.exit(1); }
+if (!loop.took) { console.error('FAIL: driving onto a pin did not take the job'); process.exit(1); }
+if (loop.paid <= 0) { console.error('FAIL: a completed delivery paid nothing'); process.exit(1); }
+if (loop.paid > 0 && loop.clockAfter <= loop.clockBefore) {
+  console.error('FAIL: a delivery paid cash but put no time back on the clock');
+  process.exit(1);
+}
+if (ended.state !== 'over' || !ended.summaryVisible) { console.error('FAIL: the shift never closed out'); process.exit(1); }
+if (ended.banked !== ended.career) { console.error(`FAIL: banked ${ended.banked} but career holds ${ended.career}`); process.exit(1); }
 // Headless Chromium does not pace rAF at a real 60Hz, so fps here is informational only.
 // The meaningful budget is our own per-frame cost: 16.6ms is the wall, 8ms leaves headroom
 // for a mid-range phone doing the same work on a slower core.
