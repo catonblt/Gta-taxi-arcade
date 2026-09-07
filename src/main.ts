@@ -108,7 +108,10 @@ const SETTINGS_KEY = 'getaway.settings.v1';
 
 function saveSettings(): void {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...input.settings, muted: audio.muted }));
+    localStorage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify({ ...input.settings, muted: audio.muted }),
+    );
   } catch {
     // Storage refused; the choices simply will not survive a reload.
   }
@@ -118,9 +121,17 @@ function loadSettings(): void {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return;
-    const data = JSON.parse(raw) as { sensitivity?: number; leftHanded?: boolean; muted?: boolean };
+    const data = JSON.parse(raw) as {
+      sensitivity?: number;
+      mirrored?: boolean;
+      scheme?: string;
+      muted?: boolean;
+    };
     if (typeof data.sensitivity === 'number') input.settings.sensitivity = clamp(data.sensitivity, 3, 12);
-    if (typeof data.leftHanded === 'boolean') input.settings.leftHanded = data.leftHanded;
+    if (typeof data.mirrored === 'boolean') input.settings.mirrored = data.mirrored;
+    if (data.scheme === 'split' || data.scheme === 'halves' || data.scheme === 'oneThumb') {
+      input.settings.scheme = data.scheme;
+    }
     if (data.muted) audio.setMuted(true);
   } catch {
     // A corrupt settings blob is not worth refusing to start over.
@@ -482,13 +493,15 @@ function render(alpha: number): void {
         y: (cop.car.y - camera.y) * camera.scale + renderer.cssHeight / 2,
       })),
       district: district.name,
+      // Named for the first few seconds of a shift, then out of the way.
+      controlLabelAlpha: clamp(1 - (shift.elapsed - 5) / 3, 0, 1),
       topOffset: minimap.box(renderer, safe.top, safe.right).size + safe.top + 22,
       tiresShredded: car.tiresShredded,
       time: elapsed,
       fps: loop.stats.fps,
       showDebug: debug,
     },
-    input.layout(),
+    input.hint(),
   );
 
   if (bustedFor > 0) drawBusted();

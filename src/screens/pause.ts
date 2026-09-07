@@ -1,5 +1,5 @@
 import type { Audio } from '../core/audio';
-import type { InputSettings } from '../core/input';
+import { SCHEMES, type ControlSettings, type SchemeId } from '../core/input';
 
 export interface PauseHandlers {
   onResume: () => void;
@@ -8,19 +8,30 @@ export interface PauseHandlers {
   onSettingsChanged: () => void;
 }
 
+function element<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className?: string,
+  text?: string,
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
 /**
  * Pause is not a luxury on a phone — the shift is on a clock and a phone call is not a reason to
  * lose a night's takings. It doubles as the settings screen, because a player who wants to change
- * the steering wants to change it in the middle of the run that made them want to.
+ * the controls wants to change them in the middle of the run that made them want to.
  */
 export class PauseScreen {
   private readonly panel = document.getElementById('paused');
   private readonly button = document.getElementById('pause-button');
 
   constructor(
-    private readonly settings: InputSettings,
+    private readonly settings: ControlSettings,
     private readonly audio: Audio,
-    handlers: PauseHandlers,
+    private readonly handlers: PauseHandlers,
   ) {
     this.button?.addEventListener('click', () => handlers.onResume());
     document.getElementById('resume')?.addEventListener('click', () => handlers.onResume());
@@ -42,19 +53,16 @@ export class PauseScreen {
     const slider = document.getElementById('set-sensitivity') as HTMLInputElement | null;
     slider?.addEventListener('input', () => {
       this.settings.sensitivity = Number(slider.value);
-      this.renderValues();
+      this.render();
       handlers.onSettingsChanged();
     });
 
-    document.getElementById('set-hand')?.addEventListener('click', () => {
-      this.settings.leftHanded = !this.settings.leftHanded;
-      this.renderValues();
-      handlers.onSettingsChanged();
-    });
+    document.getElementById('set-hand-left')?.addEventListener('click', () => this.setMirrored(false));
+    document.getElementById('set-hand-right')?.addEventListener('click', () => this.setMirrored(true));
 
     document.getElementById('set-sound')?.addEventListener('click', () => {
       this.audio.setMuted(!this.audio.muted);
-      this.renderValues();
+      this.render();
       handlers.onSettingsChanged();
     });
   }
@@ -66,7 +74,7 @@ export class PauseScreen {
   }
 
   show(): void {
-    this.renderValues();
+    this.render();
     this.panel?.removeAttribute('hidden');
     this.button?.setAttribute('hidden', '');
   }
@@ -84,27 +92,68 @@ export class PauseScreen {
     return this.panel?.hasAttribute('hidden') === false;
   }
 
-  private renderValues(): void {
-    const slider = document.getElementById('set-sensitivity') as HTMLInputElement | null;
-    if (slider) slider.value = String(this.settings.sensitivity);
+  private setMirrored(mirrored: boolean): void {
+    this.settings.mirrored = mirrored;
+    this.render();
+    this.handlers.onSettingsChanged();
+  }
 
-    const value = document.getElementById('set-sensitivity-value');
-    if (value) {
-      const s = this.settings.sensitivity;
-      const feel = s < 5 ? 'Slow and deliberate' : s > 9 ? 'Twitchy' : 'Balanced';
-      value.textContent = `${feel} — full lock in ${(1 / s).toFixed(2)}s`;
-    }
+  private select(scheme: SchemeId): void {
+    this.settings.scheme = scheme;
+    this.render();
+    this.handlers.onSettingsChanged();
+  }
 
-    const hand = document.getElementById('set-hand');
-    if (hand) {
-      hand.setAttribute('aria-pressed', String(this.settings.leftHanded));
-      hand.textContent = this.settings.leftHanded ? 'Drift on the left' : 'Drift on the right';
-    }
+  private render(): void {
+    this.renderSchemes();
+    this.renderSensitivity();
+
+    // Two buttons rather than one toggle, so the current layout is the one lit up. A single
+    // button labelled with the current state reads as switched off, which is the opposite.
+    document
+      .getElementById('set-hand-left')
+      ?.setAttribute('aria-pressed', String(!this.settings.mirrored));
+    document
+      .getElementById('set-hand-right')
+      ?.setAttribute('aria-pressed', String(this.settings.mirrored));
 
     const sound = document.getElementById('set-sound');
     if (sound) {
       sound.setAttribute('aria-pressed', String(!this.audio.muted));
       sound.textContent = this.audio.muted ? 'Sound off' : 'Sound on';
+    }
+  }
+
+  private renderSchemes(): void {
+    const host = document.getElementById('set-schemes');
+    if (!host) return;
+    host.replaceChildren();
+
+    for (const scheme of SCHEMES) {
+      const button = element('button', 'toggle', scheme.name);
+      button.type = 'button';
+      button.setAttribute('aria-pressed', String(this.settings.scheme === scheme.id));
+      button.addEventListener('click', () => this.select(scheme.id));
+      host.append(button);
+    }
+
+    const blurb = document.getElementById('set-scheme-blurb');
+    const active = SCHEMES.find((s) => s.id === this.settings.scheme);
+    if (blurb && active) blurb.textContent = active.blurb;
+  }
+
+  private renderSensitivity(): void {
+    const slider = document.getElementById('set-sensitivity') as HTMLInputElement | null;
+    if (slider) slider.value = String(this.settings.sensitivity);
+
+    const active = SCHEMES.find((s) => s.id === this.settings.scheme);
+    const label = document.getElementById('set-sensitivity-label');
+    if (label && active) label.textContent = active.sensitivityLabel;
+
+    const value = document.getElementById('set-sensitivity-value');
+    if (value) {
+      const s = this.settings.sensitivity;
+      value.textContent = s < 5 ? 'Slow and deliberate' : s > 9 ? 'Twitchy' : 'Balanced';
     }
   }
 }

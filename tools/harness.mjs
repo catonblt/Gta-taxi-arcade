@@ -302,14 +302,22 @@ const pauseCheck = await read(async () => {
   slider.dispatchEvent(new Event('input', { bubbles: true }));
   const sensitivity = g.input.settings.sensitivity;
 
-  const padsBefore = g.input.layout().driftX;
-  document.getElementById('set-hand').click();
-  const padsAfter = g.input.layout().driftX;
+  // Mirroring must move the whole layout, not just relabel it: the brake pad is the visible
+  // proof, since it is the one control with a fixed position.
+  const brakeBefore = g.input.hint().pads.find((p) => p.label === 'BRAKE').x;
+  document.getElementById('set-hand-right').click();
+  const brakeAfter = g.input.hint().pads.find((p) => p.label === 'BRAKE').x;
+  const mirrored = g.input.settings.mirrored;
+  document.getElementById('set-hand-left').click();
+
+  // Every scheme must be reachable from the pause screen.
+  const schemeButtons = document.querySelectorAll('#set-schemes .toggle').length;
 
   return {
     clockHeld: Math.abs(held - before) < 0.01,
     sensitivity,
-    padsSwapped: Math.abs(padsAfter - padsBefore) > 40,
+    padsSwapped: Math.abs(brakeAfter - brakeBefore) > 80 && mirrored,
+    schemeButtons,
     stored: localStorage.getItem('getaway.settings.v1') !== null,
   };
 });
@@ -425,7 +433,8 @@ for (const d of districts) {
 }
 check(pauseCheck.clockHeld, 'pausing did not stop the shift clock');
 check(pauseCheck.sensitivity === 11, 'the sensitivity slider did not reach the input layer');
-check(pauseCheck.padsSwapped, 'the handedness toggle did not move the pads');
+check(pauseCheck.padsSwapped, 'mirroring did not move the layout to the other hand');
+check(pauseCheck.schemeButtons === 3, `expected 3 control schemes in settings, found ${pauseCheck.schemeButtons}`);
 check(pauseCheck.stored, 'settings were never written to storage');
 check(resumed.running, 'the clock did not restart after resuming');
 check(resumed.minimapDrawn, 'the minimap was never built for this district');

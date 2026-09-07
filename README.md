@@ -23,16 +23,28 @@ npm run apk        # assemble a debug APK
 
 ## Controls
 
-The car drives itself. **Left half of the screen steers left, right half steers right.** Drift is
-the bottom-right thumb pad, brake/reverse the bottom-left. On desktop: arrow keys, space to drift,
-`R` to respawn, `F` for the frame counter.
+**Split hands**, the default. Your left thumb owns steering: land it anywhere low on the left and
+slide — how far you slide is how hard you turn. Your right thumb owns the actions: hold anywhere on
+the right to drift, with brake in the bottom corner. The car handles its own throttle.
 
-Three things are never explained in game and always available: a **launch tap** (flick the drift pad
-from a standstill), a **drift-cancel** (release drift at the apex for exit speed), and **contact
-steer** (a glancing wall hit redirects you instead of stopping you).
+The rule behind that layout is the whole point: **steering lives under one thumb, actions under the
+other, and they never overlap.** Drifting through a corner means steering and drifting at the same
+moment, so any scheme where those two want the same thumb is broken however carefully it is tuned.
 
-Pause is top-left, and doubles as the settings screen: steering sensitivity, a left-handed layout
-swap, and sound. On desktop, `Esc` or `P`.
+Three schemes ship, switchable in pause, and either hand can take the steering:
+
+| Scheme | How it works |
+|---|---|
+| **Split hands** | One thumb slides to steer, the other holds drift. Analog, and nothing shares a thumb. |
+| **Screen halves** | Hold a side to turn that way; drift and brake sit in a centre cluster the free thumb reaches. |
+| **One thumb** | Drag anywhere to steer, and committing hard to a corner breaks traction. Playable one-handed. |
+
+Three things are never explained in game and always available: a **launch tap** (flick drift from a
+standstill), a **drift-cancel** (release drift at the apex for exit speed), and **contact steer** (a
+glancing wall hit redirects you instead of stopping you).
+
+On desktop: arrow keys, space to drift, `R` to respawn, `Esc` or `P` to pause, `F` for the frame
+counter.
 
 ## Sound
 

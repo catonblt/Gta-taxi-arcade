@@ -179,9 +179,9 @@
   <p class="tagline">You drive for people who cannot afford to be seen. Take a pin, make the drop, and the fare puts time back on the clock. Nothing else does.</p>
   <p class="tagline">Colour is the deal. Green is quiet money. Red pays properly and has the police looking for you before you have pulled away.</p>
   <dl class="controls">
-    <div class="control"><dt>Screen halves</dt><dd>Steer left, steer right. The car handles its own throttle.</dd></div>
-    <div class="control"><dt>Right pad</dt><dd>Drift.</dd></div>
-    <div class="control"><dt>Left pad</dt><dd>Brake, then reverse.</dd></div>
+    <div class="control"><dt>Left thumb</dt><dd>Land it anywhere low on the left and slide. How far you slide is how hard you turn.</dd></div>
+    <div class="control"><dt>Right thumb</dt><dd>Hold anywhere on the right to drift. The car handles its own throttle.</dd></div>
+    <div class="control"><dt>Bottom right</dt><dd>Brake, then press again to reverse.</dd></div>
     <div class="control"><dt>Green bay</dt><dd>Respray. Roll in slow and the plates change.</dd></div>
     <div class="control"><dt>Purple bay</dt><dd>Somewhere to lie low, if nobody is watching.</dd></div>
     <div class="control"><dt>The badge</dt><dd>Pulsing means they can see you. Still means they are guessing.</dd></div>
@@ -196,14 +196,25 @@
   </div>
   <dl class="rows">
     <div class="setting">
-      <span class="label">Steering</span>
+      <span class="label" id="set-sensitivity-label">Steering</span>
       <input id="set-sensitivity" type="range" min="3" max="12" step="0.5" aria-label="Steering sensitivity" />
       <span class="value" id="set-sensitivity-value"></span>
     </div>
     <div class="setting">
-      <span class="label">Layout</span>
+      <span class="label">Controls</span>
+      <div class="toggles" id="set-schemes"></div>
+      <span class="value" id="set-scheme-blurb"></span>
+    </div>
+    <div class="setting">
+      <span class="label">Which hand steers</span>
       <div class="toggles">
-        <button class="toggle" id="set-hand" type="button" aria-pressed="false">Drift on the right</button>
+        <button class="toggle" id="set-hand-left" type="button" aria-pressed="true">Steer left, act right</button>
+        <button class="toggle" id="set-hand-right" type="button" aria-pressed="false">Steer right, act left</button>
+      </div>
+    </div>
+    <div class="setting">
+      <span class="label">Sound</span>
+      <div class="toggles">
         <button class="toggle" id="set-sound" type="button" aria-pressed="true">Sound on</button>
       </div>
     </div>

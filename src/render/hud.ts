@@ -1,4 +1,4 @@
-import type { PadLayout } from '../core/input';
+import type { ControlHint } from '../core/input';
 import { clamp } from '../core/math';
 import type { Renderer } from './renderer';
 
@@ -23,6 +23,8 @@ export interface HudModel {
   tiresShredded: boolean;
   multiplier: number;
   styleEvent: 'shave' | 'drift' | 'dodge' | 'break' | null;
+  /** Fades the control-zone labels out once the player has settled into the shift. */
+  controlLabelAlpha: number;
   /** Transient feedback line: job taken, job blown, level shed. */
   toast: { text: string; color: string; alpha: number } | null;
   timeLeft: number;
@@ -38,7 +40,7 @@ const MAX_PIPS = 5;
 export class Hud {
   constructor(private readonly r: Renderer) {}
 
-  draw(model: HudModel, pads: PadLayout): void {
+  draw(model: HudModel, controls: ControlHint): void {
     const ctx = this.r.ctx;
     ctx.setTransform(this.r.dpr, 0, 0, this.r.dpr, 0, 0);
     this.drawClock(model);
@@ -49,8 +51,7 @@ export class Hud {
     if (model.toast) this.drawToast(model.toast);
     if (model.hideoutProgress > 0.01) this.drawHold(model.hideoutProgress);
     if (model.canRespray) this.drawPrompt('RESPRAY — PULL IN', '#5adca0');
-    this.drawPad(pads.driftX, pads.driftY, pads.radius, 'DRIFT', model.drifting);
-    this.drawPad(pads.brakeX, pads.brakeY, pads.radius, 'BRAKE', false);
+    this.drawControls(controls, model.controlLabelAlpha);
     this.drawSpeed(model);
     this.drawMultiplier(model);
     if (model.showDebug) {
@@ -340,6 +341,62 @@ export class Hud {
     ctx.letterSpacing = '0px';
   }
 
+  /**
+   * Draws whatever layout the input layer says is live, including the steering track under the
+   * thumb that is actually steering. The HUD owns none of this geometry — if it did, what is
+   * drawn and what is hit could drift apart, which is exactly how a control scheme starts lying.
+   */
+  private drawControls(hint: ControlHint, labelAlpha: number): void {
+    const ctx = this.r.ctx;
+
+    for (const zone of hint.zones) {
+      if (!zone.label && !zone.active) continue;
+      ctx.fillStyle = zone.active ? 'rgba(240,166,60,0.07)' : 'rgba(255,255,255,0.022)';
+      ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
+
+      // Zone names are a teaching aid, not furniture: they sit in the middle of the zone where
+      // nothing else lives, and fade out once the player has had a moment with them.
+      if (zone.label && labelAlpha > 0.01) {
+        ctx.globalAlpha = labelAlpha;
+        ctx.fillStyle = zone.active ? 'rgba(255,220,160,0.55)' : 'rgba(255,255,255,0.22)';
+        ctx.font = '600 10px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.letterSpacing = '3px';
+        ctx.fillText(zone.label, zone.x + zone.w / 2, zone.y + zone.h * 0.42);
+        ctx.letterSpacing = '0px';
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // The steering track appears where the thumb landed, so the control comes to the hand
+    // rather than the hand having to find the control.
+    if (hint.track) {
+      const { x, y, halfWidth, knob } = hint.track;
+      const width = Math.min(halfWidth, 110);
+      ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x - width, y);
+      ctx.lineTo(x + width, y);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(x + knob * width, y, 13, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(240,166,60,0.85)';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fill();
+    }
+
+    for (const pad of hint.pads) {
+      this.drawPad(pad.x, pad.y, pad.r, pad.label, pad.active);
+    }
+  }
+
   private drawPad(x: number, y: number, radius: number, label: string, active: boolean): void {
     const ctx = this.r.ctx;
     ctx.beginPath();
@@ -357,10 +414,6 @@ export class Hud {
     ctx.fillText(label, x, y);
   }
 
-  /**
-   * Speed lives at the bottom, between the thumbs. The top of the screen belongs to the clock,
-   * the wanted badge and the job in hand — three things that all want the eye at once.
-   */
   private drawSpeed(model: HudModel): void {
     const ctx = this.r.ctx;
     const w = this.r.cssWidth;
