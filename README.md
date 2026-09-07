@@ -34,6 +34,17 @@ steer** (a glancing wall hit redirects you instead of stopping you).
 Pause is top-left, and doubles as the settings screen: steering sensitivity, a left-handed layout
 swap, and sound. On desktop, `Esc` or `P`.
 
+## Sound
+
+Everything is synthesised at runtime, so there are no audio files to download or decode. The engine
+shifts through five gears — revs climbing through each and dropping as it changes — sirens wail and
+get louder as they close, and a step-sequenced score adds layers as the wanted level climbs: bass
+throughout, a kick once anyone is looking for you, hats as it worsens, and a lead only at the rung
+where the helicopter is.
+
+Audio is driven from the render loop, never the simulation loop. That is deliberate: pausing stops
+the simulation, and an engine voice updated from there holds its last note indefinitely.
+
 ## On a phone
 
 `npm run sync && npm run apk` produces `android/app/build/outputs/apk/debug/app-debug.apk`
@@ -46,7 +57,7 @@ a Play Store release additionally needs.
 
 | Path | What lives there |
 |---|---|
-| `src/core/` | Fixed-timestep loop, input abstraction, seeded RNG, math |
+| `src/core/` | Fixed-timestep loop, input abstraction, procedural audio, seeded RNG, math |
 | `src/sim/` | Car physics, tile collision, the map, ambient traffic |
 | `src/render/` | Camera, canvas renderer, particles, HUD, minimap |
 | `src/data/` | Vehicles, parts, districts, and the authored maps (`.city` text grids) |

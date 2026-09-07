@@ -322,7 +322,42 @@ const resumed = await read(async () => {
   return { running: g.shift.timeLeft < before, minimapDrawn: g.minimapReady };
 });
 
-// --- Phase 12: the perf window that matters — busy streets, live pursuit, nothing stalling. ---
+// --- Phase 12: the engine must not hold a note when the simulation stops. Audio is driven from
+// the render loop precisely so that pausing cannot strand an oscillator.
+await read(() => {
+  const g = window.__getaway;
+  g.garage.district = 'docks';
+  g.startShift();
+});
+await wait(1200);
+const soundDriving = await read(() => ({
+  ...window.__getaway.audio.levels(),
+  scene: window.__getaway.audio.lastScene,
+  updates: window.__getaway.audio.updates,
+}));
+
+await read(() => window.__getaway.togglePause());
+await wait(900);
+const soundPaused = await read(() => ({
+  ...window.__getaway.audio.levels(),
+  scene: window.__getaway.audio.lastScene,
+  updates: window.__getaway.audio.updates,
+}));
+
+await read(() => {
+  const g = window.__getaway;
+  g.togglePause();
+  g.shift.timeLeft = 0.05;
+});
+await wait(1200);
+const soundEnded = await read(() => ({
+  ...window.__getaway.audio.levels(),
+  scene: window.__getaway.audio.lastScene,
+  updates: window.__getaway.audio.updates,
+}));
+await read(() => window.__getaway.garageScreen.hide());
+
+// --- Phase 13: the perf window that matters — busy streets, live pursuit, nothing stalling. ---
 await read(() => {
   const g = window.__getaway;
   g.garage.district = 'downtown';
@@ -347,7 +382,7 @@ const perf = await read(() => {
 await browser.close();
 server.close();
 
-console.log(JSON.stringify({ straightLine, chase, laidLow, shiftLoop, style, ended, garage, districts, topRung, pauseCheck, resumed, perf }, null, 2));
+console.log(JSON.stringify({ straightLine, chase, laidLow, shiftLoop, style, ended, garage, districts, topRung, pauseCheck, resumed, soundDriving, soundPaused, soundEnded, perf }, null, 2));
 
 const failures = [];
 const check = (condition, message) => { if (!condition) failures.push(message); };
@@ -396,6 +431,17 @@ check(resumed.running, 'the clock did not restart after resuming');
 check(resumed.minimapDrawn, 'the minimap was never built for this district');
 check(topRung.heliActive, 'rung 5 never put a helicopter up');
 check(topRung.cops >= 4, `rung 5 only fielded ${topRung.cops} cars`);
+// The bug this replaced: audio ran from the simulation loop, so pausing stopped updating it and
+// the engine oscillator held its last note. Being still driven is the thing worth asserting.
+check(soundPaused.updates > soundDriving.updates, 'audio stopped being driven while paused');
+check(soundEnded.updates > soundPaused.updates, 'audio stopped being driven after the shift ended');
+check(soundPaused.scene === 'menu', 'a paused game still reports itself as driving');
+check(soundEnded.scene === 'menu', 'a finished shift still reports itself as driving');
+if (soundDriving.contextState === 'running') {
+  check(soundPaused.engine < 0.005, `the engine held a note while paused (gain ${soundPaused.engine})`);
+  check(soundEnded.engine < 0.005, `the engine held a note after the shift (gain ${soundEnded.engine})`);
+  check(soundPaused.siren < 0.005, `the siren held a note while paused (gain ${soundPaused.siren})`);
+}
 check(!perf.inSolid, 'the car ended up inside a solid tile');
 check(perf.frames > 120, `only ${perf.frames} sim ticks ran`);
 // A stray spike is GC; a stream of them is our problem. 8ms leaves room for a slower phone core.

@@ -347,10 +347,47 @@ function update(dt: number): void {
 
   fx.step(dt);
   camera.follow(car.x, car.y, car.vx, car.vy, car.stats.topSpeed, dt);
-  audio.update(car.speed / car.stats.topSpeed, heat.seen, elapsed);
+}
+
+/** Distance to the nearest pursuer, for a siren that gets louder as they close. */
+function nearestCopDistance(): number {
+  let nearest = Infinity;
+  for (const cop of police.cops) {
+    const d = Math.hypot(cop.car.x - car.x, cop.car.y - car.y);
+    if (d < nearest) nearest = d;
+  }
+  return nearest;
+}
+
+/**
+ * Audio is presentation, so it runs from the render loop rather than the simulation. Driving it
+ * from `update` meant that pausing — which stops the simulation — left the engine holding its
+ * last note indefinitely, and the same on any screen that ended the shift.
+ */
+let lastAudioTime = 0;
+
+function updateAudio(): void {
+  const now = performance.now();
+  // Real elapsed time, clamped: a backgrounded tab must not hand the siren a half-second step.
+  const dt = lastAudioTime === 0 ? 1 / 60 : clamp((now - lastAudioTime) / 1000, 0, 0.1);
+  lastAudioTime = now;
+
+  const driving = shift.state === 'running' && !paused && bustedFor <= 0;
+  audio.update(
+    {
+      speedRatio: car.speed / car.stats.topSpeed,
+      onThrottle: input.state.throttle > 0,
+      chase: heat.seen,
+      copDistance: driving ? nearestCopDistance() : Infinity,
+      heat: heat.level,
+      scene: driving ? 'driving' : 'menu',
+    },
+    dt,
+  );
 }
 
 function render(alpha: number): void {
+  updateAudio();
   const x = lerp(car.prevX, car.x, alpha);
   const y = lerp(car.prevY, car.y, alpha);
   const angle = lerpAngle(car.prevAngle, car.angle, alpha);
