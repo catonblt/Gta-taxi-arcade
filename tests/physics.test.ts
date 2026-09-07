@@ -173,3 +173,131 @@ describe('reverse', () => {
     expect(car.x).toBeGreaterThan(beforeBrake);
   });
 });
+
+/** The slip angle the tyres bite hardest at, mirrored from car.ts for readable assertions. */
+const PEAK_SLIP_GUESS = 0.22;
+
+describe('the grip curve', () => {
+  /** Brings a car up to speed on open road, ready to be asked for a corner. */
+  function rolling(seconds = 3): { car: Car; map: TileMap } {
+    const map = openMap(120);
+    const car = new Car({ ...VEHICLES[0].base });
+    car.placeAt(TILE * 60, TILE * 60, 0);
+    run(car, map, seconds);
+    return { car, map };
+  }
+
+  it('has a limit: gentle cornering holds, but asking for too much breaks traction', () => {
+    const map = openMap(120);
+
+    const gentle = new Car({ ...VEHICLES[0].base });
+    gentle.placeAt(TILE * 60, TILE * 60, 0);
+    run(gentle, map, 3);
+    run(gentle, map, 0.8, { steer: 0.35 });
+
+    const greedy = new Car({ ...VEHICLES[0].base });
+    greedy.placeAt(TILE * 60, TILE * 60, 0);
+    run(greedy, map, 3);
+    run(greedy, map, 0.8, { steer: 1 });
+
+    // A flat grip value would give these two the same character, just scaled. A curve means
+    // the gentle one stays in the grippy region while the greedy one goes over the peak.
+    expect(gentle.slipAngle).toBeLessThan(PEAK_SLIP_GUESS);
+    expect(greedy.slipAngle).toBeGreaterThan(gentle.slipAngle * 2);
+  });
+
+  it('keeps sliding after the drift button is released, instead of snapping straight', () => {
+    const { car, map } = rolling();
+    run(car, map, 1, { steer: 1, drift: true });
+    const slidingAt = car.slipAngle;
+    expect(slidingAt).toBeGreaterThan(0.4);
+
+    // Let go of everything and count how long the car stays genuinely sideways. Under a plain
+    // damper this collapsed almost immediately; past the peak the tyres cannot haul it back.
+    let stillSliding = 0;
+    for (let i = 0; i < Math.round(1.5 / FIXED_DT); i++) {
+      car.step(input({ steer: 0 }), map, FIXED_DT);
+      if (car.slipAngle > 0.25) stillSliding += FIXED_DT;
+    }
+    expect(stillSliding).toBeGreaterThan(0.25);
+  });
+
+  it('lets countersteer catch a slide faster than holding the turn in', () => {
+    const map = openMap(120);
+
+    const held = new Car({ ...VEHICLES[0].base });
+    held.placeAt(TILE * 60, TILE * 60, 0);
+    run(held, map, 3);
+    run(held, map, 1, { steer: 1, drift: true });
+    run(held, map, 0.5, { steer: 1 });
+
+    const caught = new Car({ ...VEHICLES[0].base });
+    caught.placeAt(TILE * 60, TILE * 60, 0);
+    run(caught, map, 3);
+    run(caught, map, 1, { steer: 1, drift: true });
+    run(caught, map, 0.5, { steer: -1 }); // opposite lock
+
+    expect(caught.slipAngle).toBeLessThan(held.slipAngle);
+  });
+
+  it('rotates the car harder when trailing the brake into a corner', () => {
+    const map = openMap(120);
+
+    const coasting = new Car({ ...VEHICLES[0].base });
+    coasting.placeAt(TILE * 60, TILE * 60, 0);
+    run(coasting, map, 3);
+    const coastStart = coasting.angle;
+    run(coasting, map, 0.5, { steer: 1 });
+    const coastTurned = Math.abs(coasting.angle - coastStart);
+
+    const trailing = new Car({ ...VEHICLES[0].base });
+    trailing.placeAt(TILE * 60, TILE * 60, 0);
+    run(trailing, map, 3);
+    const trailStart = trailing.angle;
+    run(trailing, map, 0.5, { steer: 1, throttle: 0, brake: 1 });
+    const trailTurned = Math.abs(trailing.angle - trailStart);
+
+    // Braking is a cornering tool, not only a way to stop.
+    expect(trailTurned).toBeGreaterThan(coastTurned);
+  });
+
+  it('makes a maxed grip upgrade genuinely hold a corner the base car cannot', () => {
+    const map = openMap(120);
+    const base = new Car({ ...VEHICLES[0].base });
+    const upgraded = new Car({ ...VEHICLES[0].base, grip: VEHICLES[0].base.grip * 1.45 });
+    base.placeAt(TILE * 60, TILE * 60, 0);
+    upgraded.placeAt(TILE * 60, TILE * 60, 0);
+    run(base, map, 3);
+    run(upgraded, map, 3);
+    run(base, map, 0.9, { steer: 1 });
+    run(upgraded, map, 0.9, { steer: 1 });
+    expect(upgraded.slipAngle).toBeLessThan(base.slipAngle);
+  });
+});
+
+describe('parking in a bay', () => {
+  it('stays put when the brake is first pressed while already stopped', () => {
+    const map = openMap(64);
+    const car = new Car({ ...VEHICLES[0].base });
+    car.placeAt(TILE * 32, TILE * 32, 0);
+
+    // Sitting still, as though rolled to a stop in a hideout bay. Pressing the brake here has to
+    // mean "stay", not "reverse" — otherwise lying low quietly backs you out of the bay.
+    const restingX = car.x;
+    run(car, map, 3, { throttle: 0, brake: 1 });
+    expect(car.speed).toBeLessThan(1);
+    expect(Math.abs(car.x - restingX)).toBeLessThan(1);
+  });
+
+  it('still backs out on a deliberate second tap from that same standstill', () => {
+    const map = openMap(64);
+    const car = new Car({ ...VEHICLES[0].base });
+    car.placeAt(TILE * 32, TILE * 32, 0);
+    run(car, map, 1, { throttle: 0, brake: 1 });
+    const restingX = car.x;
+
+    run(car, map, 0.15, { throttle: 0, brake: 0 });
+    run(car, map, 1, { throttle: 0, brake: 1 });
+    expect(car.x).toBeLessThan(restingX - 5);
+  });
+});

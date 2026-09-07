@@ -104,6 +104,29 @@ const chase = await read(() => {
 });
 chase.contactMs = contactAt;
 
+// --- Phase 3b: the police must actually be driving. They run the player's physics, and the
+// tyre model has a grip peak they can fall off exactly like a player can — but without eyes to
+// see it coming. A chase full of spun-out cruisers is no chase, so sample them over a window
+// and check how many are sideways or stationary.
+const pursuitQuality = await read(async () => {
+  const g = window.__getaway;
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  let samples = 0;
+  let spun = 0;
+  let crawling = 0;
+  let fastest = 0;
+  for (let i = 0; i < 6; i++) {
+    await pause(400);
+    for (const cop of g.police.cops) {
+      samples++;
+      if (cop.car.slipAngle > 0.7) spun++;
+      if (cop.car.speed < 40) crawling++;
+      fastest = Math.max(fastest, Math.round(cop.car.speed));
+    }
+  }
+  return { samples, spun, crawling, fastest };
+});
+
 // --- Phase 4: the intended escape. Park in a hideout bay and lie low. ------------------------
 // Teleporting across the map is NOT escaping: dispatch keeps sending fresh units to wherever
 // you are while the hunt is live. Breaking their line of sight and holding still is the way out.
@@ -390,7 +413,7 @@ const perf = await read(() => {
 await browser.close();
 server.close();
 
-console.log(JSON.stringify({ straightLine, chase, laidLow, shiftLoop, style, ended, garage, districts, topRung, pauseCheck, resumed, soundDriving, soundPaused, soundEnded, perf }, null, 2));
+console.log(JSON.stringify({ straightLine, chase, pursuitQuality, laidLow, shiftLoop, style, ended, garage, districts, topRung, pauseCheck, resumed, soundDriving, soundPaused, soundEnded, perf }, null, 2));
 
 const failures = [];
 const check = (condition, message) => { if (!condition) failures.push(message); };
@@ -408,6 +431,18 @@ check(
 );
 // Passing traffic can nudge a parked car; what matters is that it stays well under the speed
 // at which lying low stops counting.
+check(
+  pursuitQuality.spun <= pursuitQuality.samples * 0.2,
+  `${pursuitQuality.spun} of ${pursuitQuality.samples} pursuer samples were spun out`,
+);
+check(
+  pursuitQuality.crawling <= pursuitQuality.samples * 0.45,
+  `${pursuitQuality.crawling} of ${pursuitQuality.samples} pursuer samples were barely moving`,
+);
+check(
+  pursuitQuality.fastest > 300,
+  `no pursuer got above ${pursuitQuality.fastest} — the police cannot drive their own car`,
+);
 check(laidLow.speed <= 15, `could not hold still in a hideout bay (${laidLow.speed} u/s)`);
 check(laidLow.level === 1, `lying low did not shed a level (heat ${laidLow.level})`);
 check(shiftLoop.offered > 0, 'no work was offered');

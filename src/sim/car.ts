@@ -1,5 +1,5 @@
 import type { InputState } from '../core/input';
-import { clamp, damp } from '../core/math';
+import { clamp } from '../core/math';
 import type { VehicleStats } from '../data/vehicles';
 import { resolveMapCollision } from './collision';
 import type { TileMap } from './tilemap';
@@ -7,17 +7,40 @@ import type { TileMap } from './tilemap';
 /** Speed below which the car is treated as stationary for launch taps and stop checks. */
 const CRAWL = 30;
 /**
- * How long after coming to rest a brake press still means "reverse" rather than "stop".
+ * How long after coming to rest, and after letting the brake go, a press still means "reverse".
  *
- * Without this the car had to be under CRAWL/5 at the exact instant of the press, and with an
- * auto-throttle it clears that two frames after the brake is released — roughly 30ms. Reverse
- * therefore only engaged if the double tap happened to land inside that window, which is what
- * made it feel like it worked at random. Half a second is still under a car length of travel,
- * so it reads as shuffling in place rather than driving off.
+ * Reverse used to require being under CRAWL/5 at the exact instant of the press, and with an
+ * auto-throttle the car clears that two frames after the brake is released — roughly 30ms — so
+ * it only engaged if a double tap happened to land inside that window. Hence "sometimes".
+ *
+ * The rule is now simply: tap once to stop, tap again to reverse. Requiring a genuine re-press
+ * matters as much as the timing window did — a first press while already stationary has to mean
+ * stay put, or holding the brake to lie low in a hideout bay would quietly back you out of it.
  */
 const REVERSE_GRACE = 0.55;
 /** Slip angle (radians) past which the car is sliding whether the player asked for it or not. */
-const AUTO_DRIFT_SLIP = 0.42; // ~24 degrees
+const AUTO_DRIFT_SLIP = 0.34; // ~19 degrees, comfortably past the grip peak
+
+/**
+ * Slip angle at which the tyres bite hardest. Below it grip climbs, above it the contact patch
+ * gives up and grip falls away — the shape every tyre curve has, and the reason a car warns you
+ * before it lets go. A flat grip value cannot express a limit at all, which is why the drift
+ * button used to be the only way to break traction.
+ */
+const PEAK_SLIP = 0.22; // ~13 degrees
+
+/**
+ * Grip remaining once the tyres are properly sliding, as a fraction of peak. Kept high on
+ * purpose: a slide decays gently and can be caught, rather than snapping the car away from a
+ * player who has no steering wheel to feel it through.
+ */
+const SLIDING_FLOOR = 0.66;
+
+/** Turns the grip stat into a peak lateral acceleration in world units per second squared. */
+const GRIP_TO_ACCEL = 55;
+
+/** How much more eagerly the car rotates while braking, standing in for load moving forward. */
+const BRAKE_ROTATION = 0.34;
 /** Slip angle that counts as a real slide for charging the drift boost. */
 const CHARGE_SLIP = 0.3;
 
@@ -59,6 +82,8 @@ export class Car {
   private brakeWasDown = false;
   /** Seconds since the car was last essentially stationary. */
   private sinceRest = 0;
+  /** Seconds since the brake was last let go. Infinite until it has been used at all. */
+  private sinceBrakeRelease = Infinity;
   /** Reverse is only available when the brake is pressed again from a standstill. */
   private reverseArmed = false;
 
@@ -117,7 +142,11 @@ export class Car {
     // otherwise no way to park at all, which quietly made hideouts impossible to use. Reverse
     // is a second, deliberate press once you are already stationary.
     const braking = input.brake > 0;
-    if (braking && !this.brakeWasDown) this.reverseArmed = this.sinceRest < REVERSE_GRACE;
+    if (braking && !this.brakeWasDown) {
+      // A re-press, made shortly after the car was last at rest: tap to stop, tap again to back up.
+      this.reverseArmed = this.sinceRest < REVERSE_GRACE && this.sinceBrakeRelease < REVERSE_GRACE;
+    }
+    this.sinceBrakeRelease = braking ? this.sinceBrakeRelease + dt : 0;
     this.brakeWasDown = braking;
 
     if (braking) {
@@ -141,11 +170,27 @@ export class Car {
     this.driftHeldFor = input.drift ? this.driftHeldFor + dt : 0;
 
     // --- Grip ---------------------------------------------------------------------------
-    // Bleeding lateral velocity is the whole model: bleed it fast and the car is on rails,
-    // bleed it slowly and the car slides while the nose keeps turning. That is the drift.
+    // The tyres are a curve, not a constant. Grip climbs with slip angle to a peak and then
+    // falls away to a sliding floor, so the car has a limit you can feel coming, a slide that
+    // sustains until you correct it, and a countersteer that genuinely catches it.
     const surface = map.gripAtWorld(this.x, this.y);
-    const gripRate = (this.drifting ? s.driftGrip : s.grip) * surface * (this.tiresShredded ? 0.55 : 1);
-    vLat *= damp(gripRate, dt);
+    const peakAccel =
+      (this.drifting ? s.driftGrip : s.grip) * GRIP_TO_ACCEL * surface * (this.tiresShredded ? 0.55 : 1);
+
+    // Rises to 1 at the peak, decays past it, floored where a sliding tyre still bites.
+    const n = slipAngle / PEAK_SLIP;
+    const curve = Math.max((2 * n) / (1 + n * n), SLIDING_FLOOR);
+
+    // One grip budget, shared. Spending it on stopping leaves less for turning, so braking
+    // mid-corner runs you wide — and easing off the brake hands the grip back.
+    const longitudinalDemand = braking ? s.brake : s.accel * input.throttle;
+    const longUse = clamp(longitudinalDemand / Math.max(peakAccel, 1), 0, 0.95);
+    const lateralAccel = peakAccel * curve * Math.sqrt(1 - longUse * longUse);
+
+    // A force, not a damper: the curve caps how fast lateral speed can be taken away, which is
+    // exactly what stops a big slide from being hauled straight instantly.
+    const bleed = lateralAccel * dt;
+    vLat = Math.abs(vLat) <= bleed ? 0 : vLat - Math.sign(vLat) * bleed;
 
     // Sliding scrubs forward speed, so drifting everywhere is not free.
     vLong -= Math.abs(vLat) * 0.55 * dt;
@@ -187,8 +232,16 @@ export class Car {
     const speedRamp = clamp(Math.abs(vLong) / 90, 0, 1);
     const highSpeedFalloff = 1 - 0.35 * clamp(Math.abs(vLong) / topSpeed, 0, 1);
     const driftAuthority = this.drifting ? 1.55 : 1;
+    // Braking pitches load onto the front tyres and the nose bites harder. A single-body car
+    // has no axles to move that load between, so the effect is expressed as yaw authority:
+    // trail the brake into a corner and the car rotates in, which is the technique that makes
+    // the brake a cornering tool rather than only a way to stop.
+    const brakeRotation = 1 + (braking && Math.abs(vLong) > CRAWL ? BRAKE_ROTATION : 0);
     const dir = vLong < -1 ? -1 : 1;
-    this.angle += s.steerRate * input.steer * speedRamp * highSpeedFalloff * driftAuthority * dir * dt;
+    // Steering authority is deliberately NOT reduced when the tyres are sliding: without force
+    // feedback the player needs to be able to catch the car at any point in a slide.
+    this.angle +=
+      s.steerRate * input.steer * speedRamp * highSpeedFalloff * driftAuthority * brakeRotation * dir * dt;
 
     const impact = resolveMapCollision(this, map);
     if (impact > 0) {
