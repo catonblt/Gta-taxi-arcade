@@ -59,11 +59,17 @@ the simulation, and an engine voice updated from there holds its last note indef
 
 ## On a phone
 
-`npm run sync && npm run apk` produces `android/app/build/outputs/apk/debug/app-debug.apk`
-(4.2 MB) via Capacitor, wrapping the same `dist/` the browser runs. The build also ships a web
-manifest and icons, so served over HTTPS it installs straight from Chrome's **Add to home screen**
-without any store at all. See [docs/ANDROID.md](docs/ANDROID.md) for the SDK requirements and what
-a Play Store release additionally needs.
+**iPhone:** open the game's link in Safari, tap Share, then **Add to Home Screen** — it launches
+full-screen with its own icon, no browser chrome. There is no `.ipa` build here: that needs Xcode
+on a Mac and a paid Apple Developer account, neither of which exists in this environment. See
+[docs/IOS.md](docs/IOS.md) for exactly what makes that installation work.
+
+**Android:** `npm run sync && npm run apk` produces
+`android/app/build/outputs/apk/debug/app-debug.apk` (4.2 MB) via Capacitor, wrapping the same
+`dist/` the browser runs. The build also ships a web manifest and icons, so served over HTTPS it
+installs straight from Chrome's **Add to home screen** without any store at all. See
+[docs/ANDROID.md](docs/ANDROID.md) for the SDK requirements and what a Play Store release
+additionally needs.
 
 ## Layout
 

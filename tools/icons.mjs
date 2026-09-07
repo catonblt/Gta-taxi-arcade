@@ -7,7 +7,8 @@ import { mkdirSync } from 'node:fs';
 const OUT = new URL('../public/icons/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
 
-const SIZES = [192, 512];
+// 180 is Apple's canonical apple-touch-icon size (60pt @3x); 192/512 cover Android/PWA.
+const SIZES = [180, 192, 512];
 
 const svg = (size) => `
 <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100">
