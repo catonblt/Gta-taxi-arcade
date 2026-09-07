@@ -18,6 +18,8 @@ export interface HudModel {
   /** Screen-space job markers: offers and the current objective. */
   markers: readonly { x: number; y: number; color: string; label: string; objective: boolean }[];
   district: string;
+  /** Where the top-right furniture ends, so the job banner can sit clear of the map. */
+  topOffset: number;
   tiresShredded: boolean;
   multiplier: number;
   styleEvent: 'shave' | 'drift' | 'dodge' | 'break' | null;
@@ -43,7 +45,7 @@ export class Hud {
     this.drawHeat(model);
     this.drawMarkers(model);
     this.drawPursuerArrows(model);
-    if (model.job) this.drawJobBanner(model.job);
+    if (model.job) this.drawJobBanner(model.job, model.topOffset);
     if (model.toast) this.drawToast(model.toast);
     if (model.hideoutProgress > 0.01) this.drawHold(model.hideoutProgress);
     if (model.canRespray) this.drawPrompt('RESPRAY — PULL IN', '#5adca0');
@@ -177,11 +179,11 @@ export class Hud {
   }
 
   /** The job in hand: what it is, what it pays, and how long the client will wait. */
-  private drawJobBanner(job: NonNullable<HudModel['job']>): void {
+  private drawJobBanner(job: NonNullable<HudModel['job']>, top: number): void {
     const ctx = this.r.ctx;
-    const w = Math.min(this.r.cssWidth - 32, 340);
+    const w = Math.min(this.r.cssWidth - 32, 360);
     const x = (this.r.cssWidth - w) / 2;
-    const y = 68;
+    const y = top;
 
     ctx.fillStyle = 'rgba(11,13,16,0.72)';
     ctx.fillRect(x, y, w, 44);

@@ -45,14 +45,14 @@
     padding-left: env(safe-area-inset-left, 0px);
   }
 
-  #briefing, #summary, #garage {
+  #briefing, #summary, #garage, #paused {
     position: fixed; inset: 0; z-index: 10;
     display: flex; flex-direction: column; justify-content: flex-end;
     padding: max(24px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
     gap: 22px;
     background: linear-gradient(to bottom, rgba(11,13,16,0.55) 0%, rgba(11,13,16,0.93) 55%, var(--ink) 100%);
   }
-  #briefing[hidden], #summary[hidden], #garage[hidden] { display: none; }
+  #briefing[hidden], #summary[hidden], #garage[hidden], #paused[hidden] { display: none; }
 
   .eyebrow {
     font-family: var(--mono); font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
@@ -75,14 +75,44 @@
   }
   .control dd { font-size: 13px; color: #c3cad4; }
 
-  #start, #again, #drive {
+  #start, #again, #drive, #resume {
     appearance: none; border: none; cursor: pointer; width: 100%;
     background: var(--amber); color: #1a1206;
     font-family: var(--display); font-weight: 700; font-size: 26px; letter-spacing: 0.06em;
     text-transform: uppercase; padding: 14px 0 11px; border-radius: 2px;
   }
-  #start:focus-visible, #again:focus-visible, #drive:focus-visible { outline: 3px solid var(--paper); outline-offset: 3px; }
-  #start:active, #again:active, #drive:active { background: #d8912e; }
+  #start:focus-visible, #again:focus-visible, #drive:focus-visible, #resume:focus-visible { outline: 3px solid var(--paper); outline-offset: 3px; }
+  #start:active, #again:active, #drive:active, #resume:active { background: #d8912e; }
+
+  /* The one control that has to be reachable while driving. */
+  #pause-button {
+    position: fixed; z-index: 5;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    left: calc(12px + env(safe-area-inset-left, 0px));
+    width: 38px; height: 38px; padding: 0; cursor: pointer;
+    border: 1px solid rgba(150,160,175,0.35); border-radius: 2px;
+    background: rgba(11,13,16,0.6); color: var(--paper);
+    font-family: var(--mono); font-size: 13px; line-height: 1;
+  }
+  #pause-button[hidden] { display: none; }
+
+  #paused { justify-content: center; gap: 20px; }
+  .setting { display: grid; gap: 8px; background: var(--ink); padding: 12px 2px; }
+  .setting .label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--amber); }
+  .setting .value { font-family: var(--mono); font-size: 11px; color: var(--kerb); }
+  .setting input[type="range"] { width: 100%; accent-color: var(--amber); height: 26px; }
+  .toggles { display: flex; gap: 8px; flex-wrap: wrap; }
+  .toggle {
+    appearance: none; cursor: pointer; flex: 1 1 auto;
+    border: 1px solid rgba(150,160,175,0.35); background: transparent; color: var(--paper);
+    font-family: var(--mono); font-size: 12px; padding: 9px 12px; border-radius: 2px;
+  }
+  .toggle[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); background: rgba(240,166,60,0.10); }
+  .danger {
+    appearance: none; cursor: pointer; width: 100%; background: transparent;
+    border: 1px solid rgba(200,50,60,0.5); color: var(--signal);
+    font-family: var(--mono); font-size: 12px; padding: 10px; border-radius: 2px;
+  }
 
   /* The garage scrolls; the briefing and summary do not. */
   #garage { justify-content: flex-start; gap: 16px; overflow-y: auto; background: var(--ink); }
@@ -157,6 +187,30 @@
     <div class="control"><dt>The badge</dt><dd>Pulsing means they can see you. Still means they are guessing.</dd></div>
   </dl>
   <button id="start" type="button">Start driving</button>
+</div>
+<button id="pause-button" type="button" aria-label="Pause" hidden>II</button>
+<div id="paused" hidden>
+  <div>
+    <p class="eyebrow">Engine off</p>
+    <h1 class="wordmark">Paused</h1>
+  </div>
+  <dl class="rows">
+    <div class="setting">
+      <span class="label">Steering</span>
+      <input id="set-sensitivity" type="range" min="3" max="12" step="0.5" aria-label="Steering sensitivity" />
+      <span class="value" id="set-sensitivity-value"></span>
+    </div>
+    <div class="setting">
+      <span class="label">Layout</span>
+      <div class="toggles">
+        <button class="toggle" id="set-hand" type="button" aria-pressed="false">Drift on the right</button>
+        <button class="toggle" id="set-sound" type="button" aria-pressed="true">Sound on</button>
+      </div>
+    </div>
+  </dl>
+  <button id="resume" type="button">Back to it</button>
+  <button id="abandon" class="danger" type="button">Abandon the shift</button>
+  <button id="wipe" class="danger" type="button">Erase all progress</button>
 </div>
 <div id="garage" hidden>
   <div class="bar">

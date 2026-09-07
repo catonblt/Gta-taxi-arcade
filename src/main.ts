@@ -8,9 +8,10 @@ import { VEHICLES } from './data/vehicles';
 import { PARTS } from './data/parts';
 import { Garage } from './game/garage';
 import { JOB_KINDS, Jobs } from './game/jobs';
-import { loadGarage, saveGarage } from './game/save';
+import { clearSave, loadGarage, saveGarage } from './game/save';
 import { Shift } from './game/shift';
 import { GarageScreen } from './screens/garage';
+import { PauseScreen } from './screens/pause';
 import { MAX_MULTIPLIER, Style } from './game/style';
 import { hideSummary, showSummary } from './screens/summary';
 import { Car } from './sim/car';
@@ -21,6 +22,7 @@ import { Traffic } from './sim/traffic';
 import { Camera } from './render/camera';
 import { Fx } from './render/fx';
 import { Hud, type HudModel } from './render/hud';
+import { Minimap, type MinimapBlip } from './render/minimap';
 import { Renderer } from './render/renderer';
 
 type HudMarker = HudModel['markers'][number];
@@ -31,6 +33,8 @@ const input = new TouchInput(canvas);
 const hud = new Hud(renderer);
 const camera = new Camera();
 const fx = new Fx();
+const minimap = new Minimap();
+let minimapReady = false;
 const rng = new Rng(20260906);
 
 const garage = new Garage();
@@ -49,9 +53,21 @@ let jobs = new Jobs(map, rng, traffic);
 
 car.placeAt(map.spawn.x, map.spawn.y, 0);
 camera.snapTo(car.x, car.y);
+minimap.build(map);
 const style = new Style();
 const garageScreen = new GarageScreen(garage, () => startShift(), () => saveGarage(garage));
 const audio = new Audio();
+
+let paused = false;
+const pauseScreen = new PauseScreen(input.settings, audio, {
+  onResume: () => togglePause(),
+  onAbandon: () => { pauseScreen.hide(); paused = false; endShift(false); },
+  onWipe: () => {
+    clearSave();
+    location.reload();
+  },
+  onSettingsChanged: () => saveSettings(),
+});
 
 /** Band around a car that counts as threading it: closer than this and you have hit it. */
 const SHAVE_INNER = 30;
@@ -86,6 +102,41 @@ function toast(text: string, color: string): void {
   toastText = text;
   toastColor = color;
   toastLeft = TOAST_SECONDS;
+}
+
+const SETTINGS_KEY = 'getaway.settings.v1';
+
+function saveSettings(): void {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...input.settings, muted: audio.muted }));
+  } catch {
+    // Storage refused; the choices simply will not survive a reload.
+  }
+}
+
+function loadSettings(): void {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw) as { sensitivity?: number; leftHanded?: boolean; muted?: boolean };
+    if (typeof data.sensitivity === 'number') input.settings.sensitivity = clamp(data.sensitivity, 3, 12);
+    if (typeof data.leftHanded === 'boolean') input.settings.leftHanded = data.leftHanded;
+    if (data.muted) audio.setMuted(true);
+  } catch {
+    // A corrupt settings blob is not worth refusing to start over.
+  }
+}
+loadSettings();
+
+/** Stops the clock without ending the night. A phone call is not a reason to lose a shift. */
+function togglePause(): void {
+  if (shift.state !== 'running') return;
+  paused = !paused;
+  if (paused) pauseScreen.show();
+  else {
+    pauseScreen.hide();
+    pauseScreen.setDriving(true);
+  }
 }
 
 function reset(): void {
@@ -125,15 +176,23 @@ function startShift(): void {
   traffic = new Traffic(map, rng, district.traffic);
   police = new Police(map, rng);
   jobs = new Jobs(map, rng, traffic);
+  minimap.build(map);
+  minimapReady = true;
 
   applyBuild();
   reset();
   heat.ceiling = district.maxHeat;
   heat.setLevel(district.heatFloor);
   shift.start();
+  paused = false;
+  pauseScreen.hide();
+  pauseScreen.setDriving(true);
 }
 
 function endShift(busted: boolean): void {
+  paused = false;
+  pauseScreen.hide();
+  pauseScreen.setDriving(false);
   shift.peakMultiplier = style.peak;
   if (busted) shift.busted(heat.level > 0, jobs.completed, jobs.blown);
   else shift.clockOut(jobs.completed, jobs.blown);
@@ -172,7 +231,8 @@ window.addEventListener('orientationchange', resize);
 let debug = new URLSearchParams(location.search).has('debug');
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyF') debug = !debug;
-  if (e.code === 'KeyM') audio.setMuted(!audio.muted);
+  if (e.code === 'KeyM') { audio.setMuted(!audio.muted); saveSettings(); }
+  if (e.code === 'Escape' || e.code === 'KeyP') togglePause();
   // Debug: jump straight to a rung to exercise a doctrine without earning it first.
   const rung = Number(e.key);
   if (debug && rung >= 0 && rung <= 5 && e.key.length === 1) heat.setLevel(rung);
@@ -186,7 +246,7 @@ function update(dt: number): void {
     if (bustedFor <= 0) endShift(true);
     return;
   }
-  if (shift.state !== 'running') return;
+  if (shift.state !== 'running' || paused) return;
 
   shift.step(dt);
   if (shift.expired) { endShift(false); return; }
@@ -343,6 +403,23 @@ function render(alpha: number): void {
   }
   renderer.endWorld();
 
+  // The map answers "where can I go", which the edge arrows cannot: they only say where things
+  // are, never whether there is a road between here and there.
+  const blips: MinimapBlip[] = [];
+  for (const marker of map.markers) {
+    blips.push({ x: marker.x, y: marker.y, color: marker.kind === 'respray' ? '#5adca0' : '#a882f0' });
+  }
+  for (const offer of jobs.offers) {
+    blips.push({ x: offer.pickupX, y: offer.pickupY, color: offer.tier.color, important: true });
+  }
+  const objective = jobs.objective();
+  if (objective) blips.push({ x: objective.x, y: objective.y, color: jobs.active?.tier.color ?? '#5adca0', important: true });
+  if (heat.seen || buildMods.alwaysShowPursuers) {
+    for (const cop of police.cops) blips.push({ x: cop.car.x, y: cop.car.y, color: '#d83a44', important: true });
+  }
+  const safe = safeArea();
+  minimap.draw(renderer, x, y, angle, blips, safe.top, safe.right);
+
   hud.draw(
     {
       speed: car.speed,
@@ -368,6 +445,7 @@ function render(alpha: number): void {
         y: (cop.car.y - camera.y) * camera.scale + renderer.cssHeight / 2,
       })),
       district: district.name,
+      topOffset: minimap.box(renderer, safe.top, safe.right).size + safe.top + 22,
       tiresShredded: car.tiresShredded,
       time: elapsed,
       fps: loop.stats.fps,
@@ -501,6 +579,7 @@ loop.start();
 window.addEventListener('keydown', (e) => { if (e.code === 'KeyR') reset(); });
 
 // Exposed so the headless harness can drive and inspect a real build.
-(window as unknown as Record<string, unknown>).__getaway = { car, input, loop, camera, heat, shift, garage, garageScreen, style, audio, startShift, reset, clamp, MAX_MULTIPLIER,
+(window as unknown as Record<string, unknown>).__getaway = { car, input, loop, camera, heat, shift, garage, garageScreen, style, audio, startShift, reset, togglePause, clamp, MAX_MULTIPLIER,
+  get minimapReady() { return minimapReady; },
   get traffic() { return traffic; }, get police() { return police; }, get jobs() { return jobs; },
   get map() { return map; }, get district() { return district; }, districts: DISTRICTS, vehicles: VEHICLES, parts: PARTS };

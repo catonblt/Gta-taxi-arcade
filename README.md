@@ -31,6 +31,9 @@ Three things are never explained in game and always available: a **launch tap** 
 from a standstill), a **drift-cancel** (release drift at the apex for exit speed), and **contact
 steer** (a glancing wall hit redirects you instead of stopping you).
 
+Pause is top-left, and doubles as the settings screen: steering sensitivity, a left-handed layout
+swap, and sound. On desktop, `Esc` or `P`.
+
 ## On a phone
 
 `npm run sync && npm run apk` produces `android/app/build/outputs/apk/debug/app-debug.apk`
@@ -45,10 +48,25 @@ a Play Store release additionally needs.
 |---|---|
 | `src/core/` | Fixed-timestep loop, input abstraction, seeded RNG, math |
 | `src/sim/` | Car physics, tile collision, the map, ambient traffic |
-| `src/render/` | Camera, canvas renderer, particles, HUD |
+| `src/render/` | Camera, canvas renderer, particles, HUD, minimap |
 | `src/data/` | Vehicles, parts, districts, and the authored maps (`.city` text grids) |
 | `src/game/` | Shift clock, jobs, style multiplier, garage and save |
 | `src/screens/` | Garage and shift-summary overlays |
 | `tools/` | Map generator, icon renderer, headless play harness, economy simulator |
+
+## How it fits together
+
+The three source games are welded at one joint: **taking a job is taking the heat.** A pin's colour
+is at once its distance, its payout and the wanted level it puts on you the moment you accept, so
+choosing work is choosing how much police attention to take on.
+
+Skill and money are split deliberately. **Upgrades buy access** — harder districts, hotter work,
+survivability. **Skill buys income** — the style multiplier scales every payout, so arriving
+mid-combo is worth multiples of arriving cold.
+
+Heat is two facts kept apart: what they want you for, which never decays on its own, and whether
+they can currently see you, which the badge shows by pulsing. Each rung of the ladder adds a
+tactic rather than another car — a car that cuts ahead, then roadblocks, then spike strips, then a
+helicopter that holds you through walls.
 
 Design decisions and the milestone plan live in the build plan that seeded this repo.

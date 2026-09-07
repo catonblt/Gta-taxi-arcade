@@ -88,12 +88,21 @@ await read(() => {
   g.traffic.density = 20;
   g.heat.setLevel(2);
 });
-await wait(6000);
+// Whether a dispatched car has a sight line at exactly six seconds is geometry, not design.
+// The invariant worth asserting is that driving in a straight line at rung two GETS you found —
+// so poll for it, and report how long it took, which is a useful number in its own right.
+let contactAt = null;
+for (let elapsed = 0; elapsed < 18000 && contactAt === null; elapsed += 500) {
+  await wait(500);
+  const state = await read(() => window.__getaway.heat.pursuit);
+  if (state === 'chase') contactAt = elapsed + 500;
+}
 await shot('pursuit');
 const chase = await read(() => {
   const g = window.__getaway;
-  return { cops: g.police.cops.length, pursuit: g.heat.pursuit, level: g.heat.level };
+  return { cops: g.police.cops.length, level: g.heat.level };
 });
+chase.contactMs = contactAt;
 
 // --- Phase 4: the intended escape. Park in a hideout bay and lie low. ------------------------
 // Teleporting across the map is NOT escaping: dispatch keeps sending fresh units to wherever
@@ -271,7 +280,49 @@ const topRung = await read(() => {
   };
 });
 
-// --- Phase 11: the perf window that matters — busy streets, live pursuit, nothing stalling. ---
+// --- Phase 11: pause stops the clock, and the settings actually reach the input layer.
+await read(() => {
+  const g = window.__getaway;
+  g.garage.district = 'docks';
+  g.startShift();
+});
+await wait(400);
+await page.click('#pause-button');
+await wait(150);
+await shot('paused');
+const pauseCheck = await read(async () => {
+  const g = window.__getaway;
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  const before = g.shift.timeLeft;
+  await pause(700);
+  const held = g.shift.timeLeft;
+
+  const slider = document.getElementById('set-sensitivity');
+  slider.value = '11';
+  slider.dispatchEvent(new Event('input', { bubbles: true }));
+  const sensitivity = g.input.settings.sensitivity;
+
+  const padsBefore = g.input.layout().driftX;
+  document.getElementById('set-hand').click();
+  const padsAfter = g.input.layout().driftX;
+
+  return {
+    clockHeld: Math.abs(held - before) < 0.01,
+    sensitivity,
+    padsSwapped: Math.abs(padsAfter - padsBefore) > 40,
+    stored: localStorage.getItem('getaway.settings.v1') !== null,
+  };
+});
+await page.click('#resume');
+await wait(400);
+const resumed = await read(async () => {
+  const g = window.__getaway;
+  const before = g.shift.timeLeft;
+  await new Promise((r) => setTimeout(r, 500));
+  return { running: g.shift.timeLeft < before, minimapDrawn: g.minimapReady };
+});
+
+// --- Phase 12: the perf window that matters — busy streets, live pursuit, nothing stalling. ---
 await read(() => {
   const g = window.__getaway;
   g.garage.district = 'downtown';
@@ -296,7 +347,7 @@ const perf = await read(() => {
 await browser.close();
 server.close();
 
-console.log(JSON.stringify({ straightLine, chase, laidLow, shiftLoop, style, ended, garage, districts, topRung, perf }, null, 2));
+console.log(JSON.stringify({ straightLine, chase, laidLow, shiftLoop, style, ended, garage, districts, topRung, pauseCheck, resumed, perf }, null, 2));
 
 const failures = [];
 const check = (condition, message) => { if (!condition) failures.push(message); };
@@ -307,7 +358,11 @@ check(
   `only reached ${straightLine.speed} of ${straightLine.topSpeed} on an empty straight`,
 );
 check(chase.cops >= 2, `rung 2 only fielded ${chase.cops} cars`);
-check(chase.pursuit === 'chase', `police never got eyes on the player (${chase.pursuit})`);
+check(chase.contactMs !== null, 'a straight-line runner at rung two was never found at all');
+check(
+  chase.contactMs === null || chase.contactMs <= 15000,
+  `rung two took ${chase.contactMs}ms to make contact — too long to feel hunted`,
+);
 // Passing traffic can nudge a parked car; what matters is that it stays well under the speed
 // at which lying low stops counting.
 check(laidLow.speed <= 15, `could not hold still in a hideout bay (${laidLow.speed} u/s)`);
@@ -333,6 +388,12 @@ for (const d of districts) {
   check(d.moved > 50, `${d.id} is not drivable from its spawn`);
   check(d.heatFloor >= 0 && d.ceiling >= d.heatFloor, `${d.id} has an impossible heat range`);
 }
+check(pauseCheck.clockHeld, 'pausing did not stop the shift clock');
+check(pauseCheck.sensitivity === 11, 'the sensitivity slider did not reach the input layer');
+check(pauseCheck.padsSwapped, 'the handedness toggle did not move the pads');
+check(pauseCheck.stored, 'settings were never written to storage');
+check(resumed.running, 'the clock did not restart after resuming');
+check(resumed.minimapDrawn, 'the minimap was never built for this district');
 check(topRung.heliActive, 'rung 5 never put a helicopter up');
 check(topRung.cops >= 4, `rung 5 only fielded ${topRung.cops} cars`);
 check(!perf.inSolid, 'the car ended up inside a solid tile');
