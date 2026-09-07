@@ -1,5 +1,5 @@
 import type { InputState } from '../core/input';
-import { clamp } from '../core/math';
+import { clamp, damp } from '../core/math';
 import type { VehicleStats } from '../data/vehicles';
 import { resolveMapCollision } from './collision';
 import type { TileMap } from './tilemap';
@@ -19,25 +19,7 @@ const CRAWL = 30;
  */
 const REVERSE_GRACE = 0.55;
 /** Slip angle (radians) past which the car is sliding whether the player asked for it or not. */
-const AUTO_DRIFT_SLIP = 0.34; // ~19 degrees, comfortably past the grip peak
-
-/**
- * Slip angle at which the tyres bite hardest. Below it grip climbs, above it the contact patch
- * gives up and grip falls away — the shape every tyre curve has, and the reason a car warns you
- * before it lets go. A flat grip value cannot express a limit at all, which is why the drift
- * button used to be the only way to break traction.
- */
-const PEAK_SLIP = 0.22; // ~13 degrees
-
-/**
- * Grip remaining once the tyres are properly sliding, as a fraction of peak. Kept high on
- * purpose: a slide decays gently and can be caught, rather than snapping the car away from a
- * player who has no steering wheel to feel it through.
- */
-const SLIDING_FLOOR = 0.66;
-
-/** Turns the grip stat into a peak lateral acceleration in world units per second squared. */
-const GRIP_TO_ACCEL = 55;
+const AUTO_DRIFT_SLIP = 0.42; // ~24 degrees
 
 /** How much more eagerly the car rotates while braking, standing in for load moving forward. */
 const BRAKE_ROTATION = 0.34;
@@ -170,27 +152,21 @@ export class Car {
     this.driftHeldFor = input.drift ? this.driftHeldFor + dt : 0;
 
     // --- Grip ---------------------------------------------------------------------------
-    // The tyres are a curve, not a constant. Grip climbs with slip angle to a peak and then
-    // falls away to a sliding floor, so the car has a limit you can feel coming, a slide that
-    // sustains until you correct it, and a countersteer that genuinely catches it.
+    // Bleeding lateral velocity is the whole model: bleed it fast and the car is on rails,
+    // bleed it slowly and the car slides while the nose keeps turning. That is the drift.
+    //
+    // A slip-angle curve with a peak was tried here and reverted. It gave the car a limit you
+    // could feel and slides that sustained until you caught them, but sustaining is precisely
+    // what made drifting read as the car merely sliding rather than being placed. A constant
+    // rate always hauls the car back toward its heading, which is what makes a drift a carve
+    // you steer rather than a slide you wait out.
     const surface = map.gripAtWorld(this.x, this.y);
-    const peakAccel =
-      (this.drifting ? s.driftGrip : s.grip) * GRIP_TO_ACCEL * surface * (this.tiresShredded ? 0.55 : 1);
-
-    // Rises to 1 at the peak, decays past it, floored where a sliding tyre still bites.
-    const n = slipAngle / PEAK_SLIP;
-    const curve = Math.max((2 * n) / (1 + n * n), SLIDING_FLOOR);
-
-    // One grip budget, shared. Spending it on stopping leaves less for turning, so braking
-    // mid-corner runs you wide — and easing off the brake hands the grip back.
-    const longitudinalDemand = braking ? s.brake : s.accel * input.throttle;
-    const longUse = clamp(longitudinalDemand / Math.max(peakAccel, 1), 0, 0.95);
-    const lateralAccel = peakAccel * curve * Math.sqrt(1 - longUse * longUse);
-
-    // A force, not a damper: the curve caps how fast lateral speed can be taken away, which is
-    // exactly what stops a big slide from being hauled straight instantly.
-    const bleed = lateralAccel * dt;
-    vLat = Math.abs(vLat) <= bleed ? 0 : vLat - Math.sign(vLat) * bleed;
+    // Braking and turning still share the tyres: shed some grip while hard on the brake, so
+    // trailing it into a corner loosens the car rather than being free.
+    const brakeGripLoss = braking && Math.abs(vLong) > CRAWL ? 0.78 : 1;
+    const gripRate =
+      (this.drifting ? s.driftGrip : s.grip) * surface * brakeGripLoss * (this.tiresShredded ? 0.55 : 1);
+    vLat *= damp(gripRate, dt);
 
     // Sliding scrubs forward speed, so drifting everywhere is not free.
     vLong -= Math.abs(vLat) * 0.55 * dt;

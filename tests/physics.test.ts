@@ -174,10 +174,7 @@ describe('reverse', () => {
   });
 });
 
-/** The slip angle the tyres bite hardest at, mirrored from car.ts for readable assertions. */
-const PEAK_SLIP_GUESS = 0.22;
-
-describe('the grip curve', () => {
+describe('cornering', () => {
   /** Brings a car up to speed on open road, ready to be asked for a corner. */
   function rolling(seconds = 3): { car: Car; map: TileMap } {
     const map = openMap(120);
@@ -186,41 +183,6 @@ describe('the grip curve', () => {
     run(car, map, seconds);
     return { car, map };
   }
-
-  it('has a limit: gentle cornering holds, but asking for too much breaks traction', () => {
-    const map = openMap(120);
-
-    const gentle = new Car({ ...VEHICLES[0].base });
-    gentle.placeAt(TILE * 60, TILE * 60, 0);
-    run(gentle, map, 3);
-    run(gentle, map, 0.8, { steer: 0.35 });
-
-    const greedy = new Car({ ...VEHICLES[0].base });
-    greedy.placeAt(TILE * 60, TILE * 60, 0);
-    run(greedy, map, 3);
-    run(greedy, map, 0.8, { steer: 1 });
-
-    // A flat grip value would give these two the same character, just scaled. A curve means
-    // the gentle one stays in the grippy region while the greedy one goes over the peak.
-    expect(gentle.slipAngle).toBeLessThan(PEAK_SLIP_GUESS);
-    expect(greedy.slipAngle).toBeGreaterThan(gentle.slipAngle * 2);
-  });
-
-  it('keeps sliding after the drift button is released, instead of snapping straight', () => {
-    const { car, map } = rolling();
-    run(car, map, 1, { steer: 1, drift: true });
-    const slidingAt = car.slipAngle;
-    expect(slidingAt).toBeGreaterThan(0.4);
-
-    // Let go of everything and count how long the car stays genuinely sideways. Under a plain
-    // damper this collapsed almost immediately; past the peak the tyres cannot haul it back.
-    let stillSliding = 0;
-    for (let i = 0; i < Math.round(1.5 / FIXED_DT); i++) {
-      car.step(input({ steer: 0 }), map, FIXED_DT);
-      if (car.slipAngle > 0.25) stillSliding += FIXED_DT;
-    }
-    expect(stillSliding).toBeGreaterThan(0.25);
-  });
 
   it('lets countersteer catch a slide faster than holding the turn in', () => {
     const map = openMap(120);
@@ -238,6 +200,17 @@ describe('the grip curve', () => {
     run(caught, map, 0.5, { steer: -1 }); // opposite lock
 
     expect(caught.slipAngle).toBeLessThan(held.slipAngle);
+  });
+
+  it('pulls the car back into line once the drift button is let go', () => {
+    const { car, map } = rolling();
+    run(car, map, 1, { steer: 1, drift: true });
+    expect(car.slipAngle).toBeGreaterThan(0.3);
+
+    // The whole point of a constant bleed rate: a drift is a carve you steer out of, not a
+    // slide you sit and wait out. A slip curve was tried here and reverted for exactly this.
+    run(car, map, 0.6, { steer: 0 });
+    expect(car.slipAngle).toBeLessThan(0.1);
   });
 
   it('rotates the car harder when trailing the brake into a corner', () => {
