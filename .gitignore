@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.vite/
+*.local
+shots/
+
+# Native build output and signing material — never commit a keystore.
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+*.jks
+*.keystore
+keystore.properties

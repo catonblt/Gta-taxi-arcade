@@ -1,0 +1,29 @@
+{
+  "name": "getaway",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "vitest run",
+    "genmap": "node tools/genmap.mjs",
+    "harness": "node tools/harness.mjs",
+    "balance": "node tools/balancesim.mjs",
+    "icons": "node tools/icons.mjs",
+    "sync": "npm run build && npx cap sync android",
+    "apk": "cd android && ./gradlew assembleDebug"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.1",
+    "playwright": "^1.63.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.14",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.1",
+    "@capacitor/core": "^8.5.1"
+  }
+}

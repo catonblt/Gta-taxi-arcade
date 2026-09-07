@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#0b0d10" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Getaway" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="apple-touch-icon" href="./icons/icon-180.png" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230b0d10'/%3E%3Crect x='9' y='6' width='14' height='20' rx='3' fill='%23e0603a'/%3E%3Crect x='11' y='10' width='10' height='6' fill='%23121820'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700;900&family=DM+Mono:wght@400;500&display=swap" />
+<title>Getaway</title>
+<style>
+  :root {
+    /* A single committed visual world: sodium light on wet asphalt, seen from above. */
+    --ink: #0b0d10;
+    --asphalt: #3c424b;
+    --kerb: #96a0af;
+    --amber: #f0a63c;
+    --signal: #c8323c;
+    --paper: #e8eaee;
+    --display: "Big Shoulders Display", "Oswald", Impact, "Haettenschweiler", "Arial Narrow", sans-serif;
+    --mono: "DM Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    background: var(--ink); color: var(--paper); font-family: var(--mono);
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none; overscroll-behavior: none;
+  }
+  #game { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  /* A zero-size probe whose padding reports the device's safe insets to script. */
+  #safe-area {
+    position: fixed; top: 0; left: 0; width: 0; height: 0; visibility: hidden; pointer-events: none;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+
+  #briefing, #summary, #garage, #paused {
+    position: fixed; inset: 0; z-index: 10;
+    display: flex; flex-direction: column; justify-content: flex-end;
+    padding: max(24px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
+    gap: 22px;
+    background: linear-gradient(to bottom, rgba(11,13,16,0.55) 0%, rgba(11,13,16,0.93) 55%, var(--ink) 100%);
+  }
+  #briefing[hidden], #summary[hidden], #garage[hidden], #paused[hidden] { display: none; }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--amber);
+  }
+  .wordmark {
+    font-family: var(--display); font-weight: 900; font-size: clamp(64px, 22vw, 132px);
+    line-height: 0.82; letter-spacing: -0.01em; text-wrap: balance;
+    color: var(--paper);
+  }
+  .tagline {
+    font-size: 13px; line-height: 1.55; color: #aeb6c2; max-width: 34ch;
+  }
+
+  .controls { display: grid; gap: 1px; background: rgba(150,160,175,0.18); border-top: 1px solid rgba(150,160,175,0.3); border-bottom: 1px solid rgba(150,160,175,0.3); }
+  .control { display: grid; grid-template-columns: minmax(0, 10.5em) 1fr; align-items: baseline; gap: 14px; background: var(--ink); padding: 11px 2px; }
+  .control dt {
+    font-family: var(--mono); font-weight: 500; font-size: 11px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--amber);
+  }
+  .control dd { font-size: 13px; color: #c3cad4; }
+
+  #start, #again, #drive, #resume {
+    appearance: none; border: none; cursor: pointer; width: 100%;
+    background: var(--amber); color: #1a1206;
+    font-family: var(--display); font-weight: 700; font-size: 26px; letter-spacing: 0.06em;
+    text-transform: uppercase; padding: 14px 0 11px; border-radius: 2px;
+  }
+  #start:focus-visible, #again:focus-visible, #drive:focus-visible, #resume:focus-visible { outline: 3px solid var(--paper); outline-offset: 3px; }
+  #start:active, #again:active, #drive:active, #resume:active { background: #d8912e; }
+
+  /* The one control that has to be reachable while driving. */
+  #pause-button {
+    position: fixed; z-index: 5;
+    top: calc(12px + env(safe-area-inset-top, 0px));
+    left: calc(12px + env(safe-area-inset-left, 0px));
+    width: 38px; height: 38px; padding: 0; cursor: pointer;
+    border: 1px solid rgba(150,160,175,0.35); border-radius: 2px;
+    background: rgba(11,13,16,0.6); color: var(--paper);
+    font-family: var(--mono); font-size: 13px; line-height: 1;
+  }
+  #pause-button[hidden] { display: none; }
+
+  #paused { justify-content: center; gap: 20px; }
+  .setting { display: grid; gap: 8px; background: var(--ink); padding: 12px 2px; }
+  .setting .label { font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--amber); }
+  .setting .value { font-family: var(--mono); font-size: 11px; color: var(--kerb); }
+  .setting input[type="range"] { width: 100%; accent-color: var(--amber); height: 26px; }
+  .toggles { display: flex; gap: 8px; flex-wrap: wrap; }
+  .toggle {
+    appearance: none; cursor: pointer; flex: 1 1 auto;
+    border: 1px solid rgba(150,160,175,0.35); background: transparent; color: var(--paper);
+    font-family: var(--mono); font-size: 12px; padding: 9px 12px; border-radius: 2px;
+  }
+  .toggle[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); background: rgba(240,166,60,0.10); }
+  .danger {
+    appearance: none; cursor: pointer; width: 100%; background: transparent;
+    border: 1px solid rgba(200,50,60,0.5); color: var(--signal);
+    font-family: var(--mono); font-size: 12px; padding: 10px; border-radius: 2px;
+  }
+
+  /* The garage scrolls; the briefing and summary do not. */
+  #garage { justify-content: flex-start; gap: 16px; overflow-y: auto; background: var(--ink); }
+  .bar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; position: sticky; top: 0; background: var(--ink); padding-bottom: 8px; z-index: 2; }
+  .bar .cash { font-family: var(--mono); font-size: 22px; font-weight: 500; color: var(--amber); font-variant-numeric: tabular-nums; }
+  .bar .rep {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--kerb); flex: 0 0 auto; margin-right: -0.14em;
+  }
+  .blurb { font-family: var(--mono); font-size: 11.5px; line-height: 1.5; color: var(--kerb); max-width: 46ch; }
+
+  .section { display: flex; flex-direction: column; gap: 9px; }
+  .section > h2 {
+    font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--kerb);
+  }
+
+  .cars { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .car {
+    flex: 0 0 auto; display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
+    border: 1px solid rgba(150,160,175,0.28); background: transparent; cursor: pointer;
+    padding: 9px 12px; min-width: 132px; text-align: left; border-radius: 2px; color: var(--paper);
+  }
+  .car[aria-pressed="true"] { border-color: var(--amber); background: rgba(240,166,60,0.10); }
+  .car:disabled { opacity: 0.42; cursor: not-allowed; }
+  .car .name { font-family: var(--display); font-weight: 700; font-size: 21px; line-height: 1; }
+  .car .meta { font-family: var(--mono); font-size: 10px; color: var(--kerb); }
+
+  .rows { display: grid; gap: 1px; background: rgba(150,160,175,0.18); border-block: 1px solid rgba(150,160,175,0.3); }
+  .row {
+    display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px;
+    background: var(--ink); padding: 10px 2px;
+  }
+  .row .label { font-family: var(--mono); font-size: 12px; color: var(--paper); }
+  .row .hint { font-family: var(--mono); font-size: 10.5px; color: var(--kerb); margin-top: 2px; }
+  .pips { display: flex; gap: 3px; margin-top: 5px; }
+  .pip { width: 15px; height: 5px; background: rgba(150,160,175,0.25); }
+  .pip.on { background: var(--amber); }
+
+  .buy {
+    appearance: none; cursor: pointer; border: 1px solid var(--amber); background: transparent;
+    color: var(--amber); font-family: var(--mono); font-size: 12px; font-weight: 500;
+    padding: 7px 11px; border-radius: 2px; white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .buy:disabled { border-color: rgba(150,160,175,0.3); color: rgba(150,160,175,0.5); cursor: not-allowed; }
+  .buy.fitted { border-color: #5adca0; color: #5adca0; }
+  .buy.maxed { border-color: rgba(90,220,160,0.5); color: #5adca0; }
+
+  .part .label { display: flex; align-items: center; gap: 7px; }
+  .rarity { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+  .slotcount { font-family: var(--mono); font-size: 10px; color: var(--kerb); }
+  .wordmark.money { font-family: var(--mono); font-weight: 500; font-size: clamp(40px, 13vw, 76px); letter-spacing: -0.02em; color: var(--amber); }
+  .wordmark.busted { color: var(--signal); }
+</style>
+</head>
+<body>
+<div id="safe-area" aria-hidden="true"></div>
+<canvas id="game"></canvas>
+<div id="briefing">
+  <div>
+    <p class="eyebrow">Night shift</p>
+    <h1 class="wordmark">Getaway</h1>
+  </div>
+  <p class="tagline">You drive for people who cannot afford to be seen. Take a pin, make the drop, and the fare puts time back on the clock. Nothing else does.</p>
+  <p class="tagline">Colour is the deal. Green is quiet money. Red pays properly and has the police looking for you before you have pulled away.</p>
+  <dl class="controls">
+    <div class="control"><dt>Left thumb</dt><dd>Land it anywhere low on the left and slide. How far you slide is how hard you turn.</dd></div>
+    <div class="control"><dt>Right thumb</dt><dd>Hold anywhere on the right to drift. The car handles its own throttle.</dd></div>
+    <div class="control"><dt>Bottom right</dt><dd>Brake, then press again to reverse.</dd></div>
+    <div class="control"><dt>Green bay</dt><dd>Respray. Roll in slow and the plates change.</dd></div>
+    <div class="control"><dt>Purple bay</dt><dd>Somewhere to lie low, if nobody is watching.</dd></div>
+    <div class="control"><dt>The badge</dt><dd>Pulsing means they can see you. Still means they are guessing.</dd></div>
+  </dl>
+  <button id="start" type="button">Start driving</button>
+</div>
+<button id="pause-button" type="button" aria-label="Pause" hidden>II</button>
+<div id="paused" hidden>
+  <div>
+    <p class="eyebrow">Engine off</p>
+    <h1 class="wordmark">Paused</h1>
+  </div>
+  <dl class="rows">
+    <div class="setting">
+      <span class="label" id="set-sensitivity-label">Steering</span>
+      <input id="set-sensitivity" type="range" min="3" max="12" step="0.5" aria-label="Steering sensitivity" />
+      <span class="value" id="set-sensitivity-value"></span>
+    </div>
+    <div class="setting">
+      <span class="label">Controls</span>
+      <div class="toggles" id="set-schemes"></div>
+      <span class="value" id="set-scheme-blurb"></span>
+    </div>
+    <div class="setting">
+      <span class="label">Which hand steers</span>
+      <div class="toggles">
+        <button class="toggle" id="set-hand-left" type="button" aria-pressed="true">Steer left, act right</button>
+        <button class="toggle" id="set-hand-right" type="button" aria-pressed="false">Steer right, act left</button>
+      </div>
+    </div>
+    <div class="setting">
+      <span class="label">Sound</span>
+      <div class="toggles">
+        <button class="toggle" id="set-sound" type="button" aria-pressed="true">Sound on</button>
+      </div>
+    </div>
+  </dl>
+  <button id="resume" type="button">Back to it</button>
+  <button id="abandon" class="danger" type="button">Abandon the shift</button>
+  <button id="wipe" class="danger" type="button">Erase all progress</button>
+</div>
+<div id="garage" hidden>
+  <div class="bar">
+    <div>
+      <p class="eyebrow">The garage</p>
+      <p class="cash" id="g-cash">$0</p>
+    </div>
+    <p class="rep" id="g-rep">0 rep</p>
+  </div>
+  <div class="section">
+    <h2>Tonight's ground</h2>
+    <div class="cars" id="g-districts"></div>
+    <p class="blurb" id="g-district-blurb"></p>
+  </div>
+  <div class="section">
+    <h2>Your cars</h2>
+    <div class="cars" id="g-cars"></div>
+    <p class="blurb" id="g-blurb"></p>
+  </div>
+  <div class="section">
+    <h2>Upgrades</h2>
+    <dl class="rows" id="g-upgrades"></dl>
+  </div>
+  <div class="section">
+    <h2>Parts <span class="slotcount" id="g-slots"></span></h2>
+    <dl class="rows" id="g-parts"></dl>
+  </div>
+  <button id="drive" type="button">Start the shift</button>
+</div>
+<div id="summary" hidden>
+  <div>
+    <p class="eyebrow" id="sum-reason">Clocked out</p>
+    <h1 class="wordmark money" id="sum-cash">$0</h1>
+  </div>
+  <p class="tagline" id="sum-detail"></p>
+  <dl class="controls" id="sum-rows"></dl>
+  <button id="again" type="button">To the garage</button>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
