@@ -6,6 +6,16 @@ import type { TileMap } from './tilemap';
 
 /** Speed below which the car is treated as stationary for launch taps and stop checks. */
 const CRAWL = 30;
+/**
+ * How long after coming to rest a brake press still means "reverse" rather than "stop".
+ *
+ * Without this the car had to be under CRAWL/5 at the exact instant of the press, and with an
+ * auto-throttle it clears that two frames after the brake is released — roughly 30ms. Reverse
+ * therefore only engaged if the double tap happened to land inside that window, which is what
+ * made it feel like it worked at random. Half a second is still under a car length of travel,
+ * so it reads as shuffling in place rather than driving off.
+ */
+const REVERSE_GRACE = 0.55;
 /** Slip angle (radians) past which the car is sliding whether the player asked for it or not. */
 const AUTO_DRIFT_SLIP = 0.42; // ~24 degrees
 /** Slip angle that counts as a real slide for charging the drift boost. */
@@ -47,6 +57,8 @@ export class Car {
 
   private driftHeldFor = 0;
   private brakeWasDown = false;
+  /** Seconds since the car was last essentially stationary. */
+  private sinceRest = 0;
   /** Reverse is only available when the brake is pressed again from a standstill. */
   private reverseArmed = false;
 
@@ -83,6 +95,10 @@ export class Car {
     let vLong = this.vx * cos + this.vy * sin;
     let vLat = -this.vx * sin + this.vy * cos;
 
+    // Measured on the speed the car carried INTO this step, before the throttle touches it, so
+    // that a car sitting still is recorded as still even though it is about to be driven away.
+    this.sinceRest = Math.abs(vLong) < CRAWL * 0.2 ? 0 : this.sinceRest + dt;
+
     // --- Throttle and brake -------------------------------------------------------------
     // Drag is expressed as a fraction of the car's own acceleration so that thrust and drag
     // cancel exactly at topSpeed: the number in the data file IS the speed you reach, which
@@ -101,7 +117,7 @@ export class Car {
     // otherwise no way to park at all, which quietly made hideouts impossible to use. Reverse
     // is a second, deliberate press once you are already stationary.
     const braking = input.brake > 0;
-    if (braking && !this.brakeWasDown) this.reverseArmed = Math.abs(vLong) < CRAWL * 0.2;
+    if (braking && !this.brakeWasDown) this.reverseArmed = this.sinceRest < REVERSE_GRACE;
     this.brakeWasDown = braking;
 
     if (braking) {

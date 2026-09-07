@@ -121,3 +121,55 @@ describe('car physics', () => {
     expect(car.events.impact).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe('reverse', () => {
+  /** Drives forward, then parks by holding the brake — the state a player reverses out of. */
+  function parked(): { car: Car; map: TileMap } {
+    const map = openMap(64);
+    const car = new Car({ ...VEHICLES[0].base });
+    car.placeAt(TILE * 32, TILE * 32, 0);
+    run(car, map, 2);
+    run(car, map, 3, { throttle: 0, brake: 1 });
+    return { car, map };
+  }
+
+  it('reverses when the brake is re-pressed after parking, at human speed', () => {
+    const { car, map } = parked();
+    const restingX = car.x;
+
+    // Let go and press again a fifth of a second later — a normal, deliberate double tap.
+    // The car has already rolled away under its own throttle by then, which is exactly the
+    // case that used to leave reverse unarmed and made this feel intermittent.
+    run(car, map, 0.2, { throttle: 1, brake: 0 });
+    run(car, map, 1.2, { throttle: 0, brake: 1 });
+    expect(car.x).toBeLessThan(restingX);
+  });
+
+  it('reverses on a slower double tap too', () => {
+    const { car, map } = parked();
+    const restingX = car.x;
+    run(car, map, 0.4, { throttle: 1, brake: 0 });
+    run(car, map, 1.2, { throttle: 0, brake: 1 });
+    expect(car.x).toBeLessThan(restingX);
+  });
+
+  it('still just brakes when stopping from speed, rather than lurching backwards', () => {
+    const map = openMap(64);
+    const car = new Car({ ...VEHICLES[0].base });
+    car.placeAt(TILE * 32, TILE * 32, 0);
+    run(car, map, 2);
+    const movingX = car.x;
+    run(car, map, 4, { throttle: 0, brake: 1 });
+    expect(car.speed).toBeLessThan(1);
+    expect(car.x).toBeGreaterThan(movingX); // it stopped ahead, it did not reverse
+  });
+
+  it('does not reverse when braking long after driving away', () => {
+    const { car, map } = parked();
+    // Drive off properly, then brake somewhere else entirely: that is a stop, not a reverse.
+    run(car, map, 2.5, { throttle: 1, brake: 0 });
+    const beforeBrake = car.x;
+    run(car, map, 1.5, { throttle: 0, brake: 1 });
+    expect(car.x).toBeGreaterThan(beforeBrake);
+  });
+});

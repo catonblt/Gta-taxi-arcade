@@ -83,6 +83,12 @@ interface Pointer {
 const CONTROL_TOP = 0.28;
 /** Thumb movement inside this is treated as holding still. */
 const DEAD_ZONE = 5;
+/**
+ * How far past a pad's drawn edge still counts as hitting it. Thumbs are imprecise and land by
+ * feel rather than by sight; a near miss on the brake used to fall through to the drift zone,
+ * which looks exactly like the brake having failed.
+ */
+const PAD_HIT = 1.3;
 /** How quickly analog steering follows the thumb. High: the thumb IS the wheel. */
 const ANALOG_SMOOTHING = 22;
 
@@ -136,7 +142,7 @@ export class Controls {
   private centrePads(): { drift: { x: number; y: number; r: number }; brake: { x: number; y: number; r: number } } {
     const r = clamp(Math.min(this.width, this.height) * 0.088, 36, 74);
     const y = this.height - r - Math.min(this.width, this.height) * 0.045 - this.safe.bottom;
-    const gap = r * 1.15;
+    const gap = r * 1.4;
     const left = { x: this.width / 2 - gap, y, r };
     const right = { x: this.width / 2 + gap, y, r };
     // Mirroring swaps which of the pair is drift, so the same thumb keeps the same job.
@@ -154,14 +160,20 @@ export class Controls {
 
     if (scheme === 'oneThumb') {
       const brake = this.brakePad();
-      if (Math.hypot(x - brake.x, y - brake.y) <= brake.r * 1.2) return 'brake';
+      if (Math.hypot(x - brake.x, y - brake.y) <= brake.r * PAD_HIT) return 'brake';
       return 'steer';
     }
 
     if (scheme === 'halves') {
+      // These two sit side by side, so a generous hit radius makes them overlap. Resolve to
+      // whichever is actually nearer rather than whichever happens to be tested first —
+      // otherwise the gap between them silently belongs to one of the pair.
       const { drift, brake } = this.centrePads();
-      if (Math.hypot(x - drift.x, y - drift.y) <= drift.r * 1.2) return 'drift';
-      if (Math.hypot(x - brake.x, y - brake.y) <= brake.r * 1.2) return 'brake';
+      const toDrift = Math.hypot(x - drift.x, y - drift.y);
+      const toBrake = Math.hypot(x - brake.x, y - brake.y);
+      if (toDrift <= drift.r * PAD_HIT || toBrake <= brake.r * PAD_HIT) {
+        return toDrift <= toBrake ? 'drift' : 'brake';
+      }
       return 'steer';
     }
 
@@ -170,7 +182,7 @@ export class Controls {
     const onSteerSide = this.steerOnLeft() ? x < this.width * 0.5 : x >= this.width * 0.5;
     if (onSteerSide) return 'steer';
     const brake = this.brakePad();
-    if (Math.hypot(x - brake.x, y - brake.y) <= brake.r * 1.15) return 'brake';
+    if (Math.hypot(x - brake.x, y - brake.y) <= brake.r * PAD_HIT) return 'brake';
     return 'drift';
   }
 

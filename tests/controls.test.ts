@@ -214,3 +214,40 @@ describe('every scheme', () => {
     expect(c.state.drift).toBe(false);
   });
 });
+
+describe('pad targets', () => {
+  it('forgives a thumb that lands just outside the brake, in every scheme', () => {
+    for (const scheme of SCHEMES) {
+      const c = controls(scheme.id);
+      const brake = c.hint().pads.find((p) => p.label === 'BRAKE')!;
+      // Just past the drawn edge, low — the kind of miss a thumb makes rolling down without
+      // looking. Falling through to the drift zone reads to the player as the brake not
+      // working at all. Probing downwards keeps this away from any neighbouring pad.
+      c.down(1, brake.x, brake.y + brake.r * 1.15);
+      settle(c, 0.1);
+      expect(c.state.brake, `${scheme.id} brake near-miss`).toBe(1);
+    }
+  });
+});
+
+describe('the centre cluster', () => {
+  it('gives the gap between drift and brake to whichever is nearer', () => {
+    const c = controls('halves');
+    const drift = c.hint().pads.find((p) => p.label === 'DRIFT')!;
+    const brake = c.hint().pads.find((p) => p.label === 'BRAKE')!;
+    const midpoint = (drift.x + brake.x) / 2;
+
+    // A shade to the brake side of dead centre must brake, not drift.
+    c.down(1, midpoint + (brake.x - drift.x) * 0.15, drift.y);
+    settle(c, 0.1);
+    expect(c.state.brake).toBe(1);
+    expect(c.state.drift).toBe(false);
+    c.up(1);
+
+    // And a shade to the drift side must drift.
+    c.down(2, midpoint + (drift.x - brake.x) * 0.15, drift.y);
+    settle(c, 0.1);
+    expect(c.state.drift).toBe(true);
+    expect(c.state.brake).toBe(0);
+  });
+});
